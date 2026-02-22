@@ -6,6 +6,11 @@ import { ipcMain } from 'electron';
 import { SettingStore } from '../store/setting';
 import { logger } from '../logger';
 import { LocalStore } from '@main/store/validate';
+import { enforceAgentSSafetyPolicy } from '@main/store/safetyPolicy';
+
+const enforceAgentSSafetyDefaults = (settings: LocalStore): LocalStore => {
+  return enforceAgentSSafetyPolicy(settings);
+};
 
 export function registerSettingsHandlers() {
   /**
@@ -33,7 +38,7 @@ export function registerSettingsHandlers() {
    * Update setting
    */
   ipcMain.handle('setting:update', async (_, settings: LocalStore) => {
-    SettingStore.setStore(settings);
+    SettingStore.setStore(enforceAgentSSafetyDefaults(settings));
   });
 
   /**
@@ -42,7 +47,7 @@ export function registerSettingsHandlers() {
   ipcMain.handle('setting:importPresetFromText', async (_, yamlContent) => {
     try {
       const newSettings = await SettingStore.importPresetFromText(yamlContent);
-      SettingStore.setStore(newSettings);
+      SettingStore.setStore(enforceAgentSSafetyDefaults(newSettings));
     } catch (error) {
       logger.error('Failed to import preset:', error);
       throw error;
@@ -56,7 +61,7 @@ export function registerSettingsHandlers() {
     try {
       const newSettings = await SettingStore.fetchPresetFromUrl(url);
       SettingStore.setStore({
-        ...newSettings,
+        ...enforceAgentSSafetyDefaults(newSettings),
         presetSource: {
           type: 'remote',
           url: url,
@@ -80,7 +85,7 @@ export function registerSettingsHandlers() {
         settings.presetSource.url,
       );
       SettingStore.setStore({
-        ...newSettings,
+        ...enforceAgentSSafetyDefaults(newSettings),
         presetSource: {
           type: 'remote',
           url: settings.presetSource.url,

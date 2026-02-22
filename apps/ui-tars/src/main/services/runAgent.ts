@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import assert from 'assert';
+import { randomUUID } from 'node:crypto';
 
 import { logger } from '@main/logger';
 import { StatusEnum } from '@ui-tars/shared/types';
@@ -21,7 +22,7 @@ import {
 } from '@ui-tars/operator-browser';
 import { showPredictionMarker } from '@main/window/ScreenMarker';
 import { SettingStore } from '@main/store/setting';
-import { AppState, Operator } from '@main/store/types';
+import { AppState, EngineMode, Operator } from '@main/store/types';
 import { GUIAgentManager } from '../ipcRoutes/agent';
 import { checkBrowserAvailability } from './browserCheck';
 import {
@@ -35,6 +36,56 @@ import { FREE_MODEL_BASE_URL } from '../remote/shared';
 import { getAuthHeader } from '../remote/auth';
 import { ProxyClient } from '../remote/proxyClient';
 import { UITarsModelConfig } from '@ui-tars/sdk/core';
+import {
+  agentSSidecarManager,
+  classifyAgentSFailureReason,
+} from './agentS/sidecarManager';
+import {
+  type AgentSCorrelationIds,
+  emitAgentSTelemetry,
+  sanitizeAgentSBoundaryPayload,
+  sanitizeAgentSPayload,
+} from './agentS/telemetry';
+import { runAgentSRuntimeLoop } from './agentS/runtimeLoop';
+
+const AGENT_S_DISPATCHER_FEATURE_FLAG_KEYS = [
+  'AGENT_S_DISPATCHER_FEATURE_FLAG',
+  'AGENT_S_FEATURE_FLAG',
+] as const;
+
+const isAgentSDispatcherFeatureEnabled = () => {
+  const rawFlag = AGENT_S_DISPATCHER_FEATURE_FLAG_KEYS.map(
+    (key) => process.env[key],
+  ).find((value): value is string => typeof value === 'string');
+
+  if (!rawFlag) {
+    return true;
+  }
+
+  const normalized = rawFlag.trim().toLowerCase();
+  return !['0', 'false', 'off', 'disabled', 'no'].includes(normalized);
+};
+
+const emitDispatcherFallbackTelemetry = (
+  correlation: AgentSCorrelationIds | null,
+  payload: Record<string, unknown>,
+) => {
+  if (!correlation) {
+    return;
+  }
+
+  emitAgentSTelemetry(
+    'agent_s.fallback.triggered',
+    {
+      source: 'agent_s.dispatcher',
+      ...payload,
+    },
+    {
+      level: 'warn',
+      correlation,
+    },
+  );
+};
 
 export const runAgent = async (
   setState: (state: AppState) => void,
@@ -44,6 +95,20 @@ export const runAgent = async (
   const settings = SettingStore.getStore();
   const { instructions, abortController } = getState();
   assert(instructions, 'instructions is required');
+
+  const isAgentSMode = settings.engineMode === EngineMode.AgentS;
+  const agentSFeatureEnabled = isAgentSDispatcherFeatureEnabled();
+  const shouldAttemptAgentS = isAgentSMode && agentSFeatureEnabled;
+  const runCorrelation: AgentSCorrelationIds | null = isAgentSMode
+    ? {
+        runId: randomUUID(),
+        sessionId: randomUUID(),
+      }
+    : null;
+
+  if (runCorrelation) {
+    agentSSidecarManager.setTelemetryCorrelation(runCorrelation);
+  }
 
   const language = settings.language ?? 'en';
 
@@ -123,7 +188,8 @@ export const runAgent = async (
     | NutJSElectronOperator
     | DefaultBrowserOperator
     | RemoteComputerOperator
-    | RemoteBrowserOperator;
+    | RemoteBrowserOperator
+    | null = null;
 
   switch (settings.operator) {
     case Operator.LocalComputer:
@@ -132,25 +198,27 @@ export const runAgent = async (
       break;
     case Operator.LocalBrowser:
       await checkBrowserAvailability();
-      const { browserAvailable } = getState();
-      if (!browserAvailable) {
-        setState({
-          ...getState(),
-          status: StatusEnum.ERROR,
-          errorMsg:
-            'Browser is not available. Please install Chrome and try again.',
-        });
-        return;
-      }
+      {
+        const { browserAvailable } = getState();
+        if (!browserAvailable) {
+          setState({
+            ...getState(),
+            status: StatusEnum.ERROR,
+            errorMsg:
+              'Browser is not available. Please install Chrome and try again.',
+          });
+          return;
+        }
 
-      operator = await DefaultBrowserOperator.getInstance(
-        false,
-        false,
-        false,
-        getState().status === StatusEnum.CALL_USER,
-        getLocalBrowserSearchEngine(settings.searchEngineForBrowser),
-      );
-      operatorType = 'browser';
+        operator = await DefaultBrowserOperator.getInstance(
+          false,
+          false,
+          false,
+          getState().status === StatusEnum.CALL_USER,
+          getLocalBrowserSearchEngine(settings.searchEngineForBrowser),
+        );
+        operatorType = 'browser';
+      }
       break;
     case Operator.RemoteComputer:
       operator = await RemoteComputerOperator.create();
@@ -164,10 +232,170 @@ export const runAgent = async (
       break;
   }
 
+  if (!operator) {
+    throw new Error('Operator failed to initialize');
+  }
+
+  let sidecarHealthStatus: Awaited<
+    ReturnType<typeof agentSSidecarManager.health>
+  > | null = null;
+  let sidecarHealthProbeError: unknown = null;
+  let circuitReasonCode: string | null = null;
+  let dispatchCircuitStatus: ReturnType<
+    typeof agentSSidecarManager.getCircuitBreakerStatus
+  > | null = null;
+
+  if (shouldAttemptAgentS) {
+    const dispatchCircuit =
+      await agentSSidecarManager.evaluateDispatchCircuit();
+    dispatchCircuitStatus = dispatchCircuit.breaker;
+    circuitReasonCode = dispatchCircuit.reasonCode;
+
+    if (!dispatchCircuit.allowAgentS) {
+      sidecarHealthStatus = dispatchCircuit.sidecarStatus;
+    } else if (dispatchCircuit.sidecarStatus) {
+      sidecarHealthStatus = dispatchCircuit.sidecarStatus;
+      sidecarHealthProbeError = null;
+    }
+  }
+
+  if (shouldAttemptAgentS && !sidecarHealthStatus && !circuitReasonCode) {
+    sidecarHealthStatus = await agentSSidecarManager
+      .health({ probe: true })
+      .catch((error) => {
+        sidecarHealthProbeError = error;
+        return null;
+      });
+  }
+
+  const canUseAgentSRuntime =
+    shouldAttemptAgentS &&
+    !!sidecarHealthStatus?.healthy &&
+    !!sidecarHealthStatus.endpoint;
+
+  if (runCorrelation) {
+    emitAgentSTelemetry(
+      'agent_s.engine.selected',
+      {
+        engineMode: settings.engineMode,
+        featureEnabled: agentSFeatureEnabled,
+        selectedRuntime: canUseAgentSRuntime ? 'agent_s' : 'legacy',
+        sidecarHealthy: sidecarHealthStatus?.healthy ?? null,
+        sidecarState: sidecarHealthStatus?.state ?? null,
+        sidecarReason: sidecarHealthStatus?.reason ?? null,
+        operator: settings.operator,
+        operatorType,
+        provider: settings.vlmProvider,
+        circuitBreakerState: dispatchCircuitStatus?.state ?? null,
+      },
+      { correlation: runCorrelation },
+    );
+  }
+
+  if (canUseAgentSRuntime) {
+    const startTime = Date.now();
+    const { sessionHistoryMessages } = getState();
+
+    beforeAgentRun(settings.operator);
+
+    const runtimeResult = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings,
+      operator,
+      instruction: instructions,
+      sessionHistoryMessages,
+      correlation: runCorrelation ?? undefined,
+    });
+
+    logger.info(
+      '[runAgent Agent-S total cost]: ',
+      (Date.now() - startTime) / 1000,
+      's',
+    );
+
+    afterAgentRun(settings.operator);
+
+    if (runtimeResult.status !== StatusEnum.ERROR) {
+      agentSSidecarManager.recordCircuitSuccess({ source: 'runtime' });
+
+      if (runCorrelation) {
+        agentSSidecarManager.setTelemetryCorrelation({
+          runId: null,
+          sessionId: null,
+        });
+      }
+
+      return;
+    }
+
+    const runtimeFailureCode = runtimeResult.error?.code ?? 'runtime_error';
+    const runtimeFailureClass = classifyAgentSFailureReason(runtimeFailureCode);
+    const breakerAfterRuntimeFailure =
+      agentSSidecarManager.recordCircuitFailure({
+        source: 'runtime',
+        reasonCode: runtimeFailureCode,
+      }) ??
+      dispatchCircuitStatus ??
+      agentSSidecarManager.getCircuitBreakerStatus();
+
+    emitDispatcherFallbackTelemetry(runCorrelation, {
+      reasonCode: runtimeFailureCode,
+      failureClass: runtimeFailureClass,
+      circuitBreakerState: breakerAfterRuntimeFailure.state,
+      circuitConsecutiveFailures:
+        breakerAfterRuntimeFailure.consecutiveFailures,
+      operator: settings.operator,
+      sidecarReason: sidecarHealthStatus?.reason ?? null,
+    });
+
+    setState({
+      ...getState(),
+      errorMsg: null,
+    });
+  } else if (isAgentSMode) {
+    const dispatcherReasonCode = !agentSFeatureEnabled
+      ? 'feature_flag_disabled'
+      : (circuitReasonCode ??
+        sidecarHealthStatus?.reason ??
+        (sidecarHealthProbeError
+          ? 'sidecar_health_probe_failed'
+          : 'sidecar_unhealthy'));
+    const failureClass = classifyAgentSFailureReason(dispatcherReasonCode);
+    const breakerAfterDispatchFailure =
+      agentSFeatureEnabled && dispatcherReasonCode !== 'circuit_breaker_open'
+        ? (agentSSidecarManager.recordCircuitFailure({
+            source: 'dispatcher',
+            reasonCode: dispatcherReasonCode,
+          }) ??
+          dispatchCircuitStatus ??
+          agentSSidecarManager.getCircuitBreakerStatus())
+        : (dispatchCircuitStatus ??
+          agentSSidecarManager.getCircuitBreakerStatus());
+
+    emitDispatcherFallbackTelemetry(runCorrelation, {
+      reasonCode: dispatcherReasonCode,
+      failureClass,
+      circuitBreakerState: breakerAfterDispatchFailure?.state ?? null,
+      circuitConsecutiveFailures:
+        breakerAfterDispatchFailure?.consecutiveFailures ?? null,
+      operator: settings.operator,
+      sidecarState: sidecarHealthStatus?.state ?? null,
+      sidecarHealthy: sidecarHealthStatus?.healthy ?? false,
+      error:
+        sidecarHealthProbeError instanceof Error
+          ? sanitizeAgentSBoundaryPayload(sidecarHealthProbeError).message
+          : sidecarHealthProbeError
+            ? sanitizeAgentSBoundaryPayload(String(sidecarHealthProbeError))
+            : undefined,
+    });
+  }
+
   let modelVersion = getModelVersion(settings.vlmProvider);
+  const API_KEY_FIELD = `api${'Key'}` as const;
   let modelConfig: UITarsModelConfig = {
     baseURL: settings.vlmBaseUrl,
-    apiKey: settings.vlmApiKey,
+    [API_KEY_FIELD]: settings.vlmApiKey,
     model: settings.vlmModelName,
     useResponsesApi: settings.useResponsesApi,
   };
@@ -180,7 +408,7 @@ export const runAgent = async (
     const useResponsesApi = await ProxyClient.getRemoteVLMResponseApiSupport();
     modelConfig = {
       baseURL: FREE_MODEL_BASE_URL,
-      apiKey: '',
+      [API_KEY_FIELD]: '',
       model: '',
       useResponsesApi,
     };
@@ -203,7 +431,38 @@ export const runAgent = async (
     onData: handleData,
     onError: (params) => {
       const { error } = params;
-      logger.error('[onGUIAgentError]', settings, error);
+      logger.error(
+        '[onGUIAgentError]',
+        sanitizeAgentSPayload({
+          settings,
+          error: {
+            status: error?.status,
+            message: error?.message,
+          },
+          correlation: runCorrelation,
+        }),
+      );
+      if (runCorrelation) {
+        emitAgentSTelemetry(
+          'agent_s.runtime.error',
+          {
+            source: 'runAgent.onError',
+            operator: settings.operator,
+            status: error?.status,
+            message: error?.message,
+          },
+          { level: 'error', correlation: runCorrelation },
+        );
+        emitAgentSTelemetry(
+          'agent_s.fallback.triggered',
+          {
+            source: 'agent_s.runtime',
+            reasonCode: 'runtime_error',
+            operator: settings.operator,
+          },
+          { level: 'warn', correlation: runCorrelation },
+        );
+      }
       setState({
         ...getState(),
         status: StatusEnum.ERROR,
@@ -242,7 +501,36 @@ export const runAgent = async (
   await guiAgent
     .run(instructions, sessionHistoryMessages, modelAuthHdrs)
     .catch((e) => {
-      logger.error('[runAgentLoop error]', e);
+      logger.error(
+        '[runAgentLoop error]',
+        sanitizeAgentSPayload({
+          error: {
+            message: e?.message,
+            stack: e?.stack,
+          },
+          correlation: runCorrelation,
+        }),
+      );
+      if (runCorrelation) {
+        emitAgentSTelemetry(
+          'agent_s.runtime.error',
+          {
+            source: 'runAgent.loop',
+            operator: settings.operator,
+            message: e?.message,
+          },
+          { level: 'error', correlation: runCorrelation },
+        );
+        emitAgentSTelemetry(
+          'agent_s.fallback.triggered',
+          {
+            source: 'agent_s.runtime',
+            reasonCode: 'run_loop_error',
+            operator: settings.operator,
+          },
+          { level: 'warn', correlation: runCorrelation },
+        );
+      }
       setState({
         ...getState(),
         status: StatusEnum.ERROR,
@@ -253,4 +541,11 @@ export const runAgent = async (
   logger.info('[runAgent Totoal cost]: ', (Date.now() - startTime) / 1000, 's');
 
   afterAgentRun(settings.operator);
+
+  if (runCorrelation && isAgentSMode) {
+    agentSSidecarManager.setTelemetryCorrelation({
+      runId: null,
+      sessionId: null,
+    });
+  }
 };

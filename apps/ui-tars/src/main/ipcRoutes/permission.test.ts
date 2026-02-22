@@ -6,6 +6,10 @@ import { permissionRoute } from './permission';
 import { store } from '@main/store/create';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+type GetEnsurePermissionsContext = Parameters<
+  typeof permissionRoute.getEnsurePermissions.handle
+>[0]['context'];
+
 vi.mock('@main/env', () => ({
   isMacOS: true,
 }));
@@ -26,6 +30,12 @@ vi.mock('@main/utils/systemPermissions', () => ({
   })),
 }));
 
+const mockEnsurePermissions = async () =>
+  vi.mocked((await import('@main/utils/systemPermissions')).ensurePermissions);
+
+const mockStoreSetState = vi.mocked(store.setState);
+const mockStoreGetState = vi.mocked(store.getState);
+
 describe('permissionRoute.getEnsurePermissions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -33,71 +43,71 @@ describe('permissionRoute.getEnsurePermissions', () => {
   });
 
   it('should handle MacOS permission check errors', async () => {
-    const mockSystemPermissions = await import('@main/utils/systemPermissions');
-    (mockSystemPermissions.ensurePermissions as any).mockImplementation(() => {
+    const ensurePermissionsMock = await mockEnsurePermissions();
+    ensurePermissionsMock.mockImplementation(() => {
       throw new Error('Failed to check system permissions');
     });
 
     await expect(
       permissionRoute.getEnsurePermissions.handle({
         input: undefined,
-        context: {} as any,
+        context: {} as GetEnsurePermissionsContext,
       }),
     ).rejects.toThrow('Failed to check system permissions');
   });
 
   it('should handle store state update errors', async () => {
-    const mockSystemPermissions = await import('@main/utils/systemPermissions');
-    (mockSystemPermissions.ensurePermissions as any).mockReturnValue({
+    const ensurePermissionsMock = await mockEnsurePermissions();
+    ensurePermissionsMock.mockReturnValue({
       screenCapture: true,
       accessibility: true,
     });
 
-    (store.setState as any).mockImplementationOnce(() => {
+    mockStoreSetState.mockImplementationOnce(() => {
       throw new Error('Failed to update store state');
     });
 
     await expect(
       permissionRoute.getEnsurePermissions.handle({
         input: undefined,
-        context: {} as any,
+        context: {} as GetEnsurePermissionsContext,
       }),
     ).rejects.toThrow('Failed to update store state');
   });
 
   it('should handle store getState errors', async () => {
-    const mockSystemPermissions = await import('@main/utils/systemPermissions');
-    (mockSystemPermissions.ensurePermissions as any).mockReturnValue({
+    const ensurePermissionsMock = await mockEnsurePermissions();
+    ensurePermissionsMock.mockReturnValue({
       screenCapture: true,
       accessibility: true,
     });
 
-    (store.getState as any).mockImplementationOnce(() => {
+    mockStoreGetState.mockImplementationOnce(() => {
       throw new Error('Failed to get store state');
     });
 
     await expect(
       permissionRoute.getEnsurePermissions.handle({
         input: undefined,
-        context: {} as any,
+        context: {} as GetEnsurePermissionsContext,
       }),
     ).rejects.toThrow('Failed to get store state');
   });
 
   it('should handle invalid permission response format', async () => {
-    const mockSystemPermissions = await import('@main/utils/systemPermissions');
-    (mockSystemPermissions.ensurePermissions as any).mockReturnValue({
+    const ensurePermissionsMock = await mockEnsurePermissions();
+    ensurePermissionsMock.mockReturnValue({
       screenCapture: true,
       accessibility: true,
     });
 
-    (store.getState as any).mockReturnValue({
+    mockStoreGetState.mockReturnValue({
       ensurePermissions: { screenCapture: true, accessibility: true },
-    });
+    } as ReturnType<typeof store.getState>);
 
     const result = await permissionRoute.getEnsurePermissions.handle({
       input: undefined,
-      context: {} as any,
+      context: {} as GetEnsurePermissionsContext,
     });
 
     expect(result).toEqual({

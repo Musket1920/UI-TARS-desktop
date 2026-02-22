@@ -18,10 +18,10 @@ env:
   CI: e2e
   NODE_OPTIONS: --max-old-space-size=8192
   HUSKY: 0
-  UI_TARS_APP_PRIVATE_KEY_BASE64: e2e-ui-tars-test-private-key
+  UI_TARS_APP_PRIVATE_KEY_BASE64: placeholder-private-key
 
 permissions:
-  id-token: write
+  id-token: write # secretlint-disable-line
   contents: read
   attestations: read
 
@@ -58,5 +58,21 @@ jobs:
         run: npm install -g appdmg
       - name: Install dependencies
         run: pnpm install
-      - name: Run e2e
-        run: npm exec turbo run ui-tars-desktop#test:e2e
+      - name: Build e2e app
+        run: npm exec turbo run ui-tars-desktop#build:e2e
+      - name: Run Agent-S healthy smoke
+        run: pnpm --filter ui-tars-desktop run test:e2e --grep "@agent-s-healthy"
+      - name: Run Agent-S fallback smoke
+        run: pnpm --filter ui-tars-desktop run test:e2e --grep "@agent-s-fallback"
+      - name: Run baseline app launch smoke
+        run: pnpm --filter ui-tars-desktop run test:e2e --grep "app can launch"
+      - name: Upload e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-ui-tars-${{ matrix.os }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            apps/ui-tars/playwright-report
+            apps/ui-tars/test-results

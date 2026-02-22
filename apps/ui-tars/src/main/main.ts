@@ -18,6 +18,7 @@ import ElectronStore from 'electron-store';
 
 import * as env from '@main/env';
 import { logger } from '@main/logger';
+import { agentSSidecarManager } from '@main/services/agentS/sidecarManager';
 import { createMainWindow } from '@main/window/index';
 import { registerIpcMain } from '@ui-tars/electron-ipc/main';
 import { ipcRoutes } from './ipcRoutes';
@@ -25,6 +26,7 @@ import { ipcRoutes } from './ipcRoutes';
 import { UTIOService } from './services/utio';
 import { store } from './store/create';
 import { SettingStore } from './store/setting';
+import { AgentSSidecarMode, EngineMode } from './store/types';
 import { createTray } from './tray';
 import { registerSettingsHandlers } from './services/settings';
 import { sanitizeState } from './utils/sanitizeState';
@@ -32,6 +34,116 @@ import { windowManager } from './services/windowManager';
 import { checkBrowserAvailability } from './services/browserCheck';
 
 const { isProd } = env;
+const DEFAULT_AGENT_S_PORT = 10800;
+const DEFAULT_AGENT_S_ENDPOINT = `http://127.0.0.1:${DEFAULT_AGENT_S_PORT}`;
+
+let hasHandledBeforeQuit = false;
+
+const parseSidecarArgs = (rawArgs: string | undefined): string[] => {
+  if (!rawArgs) {
+    return [];
+  }
+
+  return rawArgs
+    .split(' ')
+    .map((arg) => arg.trim())
+    .filter(Boolean);
+};
+
+const resolveSidecarEndpoint = (
+  rawUrl: string | undefined,
+  rawPort: number | undefined,
+) => {
+  const fallbackPort =
+    typeof rawPort === 'number' && Number.isFinite(rawPort) && rawPort > 0
+      ? rawPort
+      : DEFAULT_AGENT_S_PORT;
+
+  if (!rawUrl) {
+    return `http://127.0.0.1:${fallbackPort}`;
+  }
+
+  try {
+    const target = new URL(rawUrl);
+
+    if (!target.port && fallbackPort > 0) {
+      target.port = String(fallbackPort);
+    }
+
+    return target.toString().replace(/\/$/, '');
+  } catch {
+    return DEFAULT_AGENT_S_ENDPOINT;
+  }
+};
+
+const startAgentSSidecarIfNeeded = async () => {
+  const settings = SettingStore.getStore();
+
+  if (settings.engineMode !== EngineMode.AgentS) {
+    const status = await agentSSidecarManager.stop();
+    logger.info(
+      '[agentS sidecar] manager disabled because engine mode is not Agent-S',
+      {
+        state: status.state,
+      },
+    );
+    return;
+  }
+
+  const endpoint = resolveSidecarEndpoint(
+    settings.agentSSidecarUrl,
+    settings.agentSSidecarPort,
+  );
+  const startupTimeoutMs = 12_000;
+  const startupPollIntervalMs = 250;
+  const heartbeatIntervalMs = 5_000;
+  const healthTimeoutMs = 2_000;
+  const shutdownTimeoutMs = 3_000;
+
+  if (settings.agentSSidecarMode === AgentSSidecarMode.Remote) {
+    const status = await agentSSidecarManager.start({
+      mode: 'external',
+      endpoint,
+      startupTimeoutMs,
+      startupPollIntervalMs,
+      heartbeatIntervalMs,
+      healthTimeoutMs,
+      shutdownTimeoutMs,
+    });
+
+    logger.info('[agentS sidecar] external endpoint status', {
+      state: status.state,
+      healthy: status.healthy,
+      reason: status.reason,
+      endpoint: status.endpoint,
+    });
+    return;
+  }
+
+  const command = process.env.AGENT_S_SIDECAR_COMMAND?.trim() || 'agent_s';
+  const args = parseSidecarArgs(process.env.AGENT_S_SIDECAR_ARGS);
+
+  const status = await agentSSidecarManager.start({
+    mode: 'embedded',
+    command,
+    args,
+    endpoint,
+    env: process.env,
+    startupTimeoutMs,
+    startupPollIntervalMs,
+    heartbeatIntervalMs,
+    healthTimeoutMs,
+    shutdownTimeoutMs,
+  });
+
+  logger.info('[agentS sidecar] embedded status', {
+    state: status.state,
+    healthy: status.healthy,
+    reason: status.reason,
+    endpoint: status.endpoint,
+    pid: status.pid,
+  });
+};
 
 // 在应用初始化之前启用辅助功能支持
 app.commandLine.appendSwitch('force-renderer-accessibility');
@@ -123,10 +235,29 @@ const initializeApp = async () => {
     }
   });
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (hasHandledBeforeQuit) {
+      logger.info('before-quit (finalize)');
+      const windows = BrowserWindow.getAllWindows();
+      windows.forEach((window) => {
+        window.destroy();
+      });
+      return;
+    }
+
     logger.info('before-quit');
-    const windows = BrowserWindow.getAllWindows();
-    windows.forEach((window) => window.destroy());
+    hasHandledBeforeQuit = true;
+
+    event.preventDefault();
+
+    void agentSSidecarManager
+      .stop()
+      .catch((error) => {
+        logger.error('[agentS sidecar] failed to stop before quit', error);
+      })
+      .finally(() => {
+        app.quit();
+      });
   });
 
   app.on('quit', () => {
@@ -160,6 +291,8 @@ const initializeApp = async () => {
       logger.error('Failed to update preset:', error);
     }
   }
+
+  await startAgentSSidecarIfNeeded();
 };
 
 /**
