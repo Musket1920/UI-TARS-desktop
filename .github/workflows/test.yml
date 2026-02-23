@@ -58,10 +58,10 @@ jobs:
       - name: Run test
         run: npm exec turbo run coverage
       - name: Upload coverage data
+        if: ${{ secrets.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@13ce06bfc6bbe3ecf90edbbf1bc32fe5978ca1d3 # v5.3.1
         with:
           fail_ci_if_error: true
           disable_search: true
           files: ./coverage/lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
           verbose: false
