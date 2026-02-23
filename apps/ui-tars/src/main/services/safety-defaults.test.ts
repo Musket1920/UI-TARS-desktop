@@ -10,12 +10,16 @@ const {
   importPresetFromTextMock,
   fetchPresetFromUrlMock,
   getStoreMock,
+  onSettingsUpdatedMock,
+  loggerErrorMock,
 } = vi.hoisted(() => ({
   ipcMainHandleMock: vi.fn(),
   setStoreMock: vi.fn(),
   importPresetFromTextMock: vi.fn(),
   fetchPresetFromUrlMock: vi.fn(),
   getStoreMock: vi.fn(() => ({})),
+  onSettingsUpdatedMock: vi.fn(),
+  loggerErrorMock: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -39,7 +43,7 @@ vi.mock('../store/setting', () => ({
 
 vi.mock('../logger', () => ({
   logger: {
-    error: vi.fn(),
+    error: loggerErrorMock,
   },
 }));
 
@@ -74,13 +78,24 @@ const unsafeSettings: UnsafeSettings = {
   loopIntervalInMs: 10_000,
 };
 
+const safeSettings: UnsafeSettings = {
+  ...unsafeSettings,
+  agentSEnableLocalEnv: false,
+  maxLoopCount: 200,
+  loopIntervalInMs: 3000,
+};
+
 describe('safety-defaults settings handlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    registerSettingsHandlers();
+    setStoreMock.mockImplementation((settings) => {
+      getStoreMock.mockReturnValue(settings);
+    });
+    registerSettingsHandlers(onSettingsUpdatedMock);
   });
 
   it('forces agentSEnableLocalEnv=false on setting:update', async () => {
+    getStoreMock.mockReturnValue(safeSettings);
     const handler = getHandler('setting:update');
 
     await handler({}, unsafeSettings);
@@ -91,9 +106,18 @@ describe('safety-defaults settings handlers', () => {
       maxLoopCount: 200,
       loopIntervalInMs: 3000,
     });
+    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSEnableLocalEnv: false,
+        maxLoopCount: 200,
+        loopIntervalInMs: 3000,
+      }),
+    );
   });
 
   it('forces agentSEnableLocalEnv=false on preset imports', async () => {
+    getStoreMock.mockReturnValue(safeSettings);
     importPresetFromTextMock.mockResolvedValue({ ...unsafeSettings });
     fetchPresetFromUrlMock.mockResolvedValue({ ...unsafeSettings });
 
@@ -106,6 +130,12 @@ describe('safety-defaults settings handlers', () => {
     expect(setStoreMock.mock.calls[0][0]).toMatchObject({
       agentSEnableLocalEnv: false,
     });
+    expect(onSettingsUpdatedMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        agentSEnableLocalEnv: false,
+      }),
+    );
     expect(setStoreMock.mock.calls[1][0]).toMatchObject({
       agentSEnableLocalEnv: false,
       maxLoopCount: 200,
@@ -116,6 +146,7 @@ describe('safety-defaults settings handlers', () => {
         autoUpdate: true,
       },
     });
+    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(2);
   });
 
   it('forces safety policy bounds during remote preset refresh', async () => {
@@ -142,5 +173,20 @@ describe('safety-defaults settings handlers', () => {
         autoUpdate: true,
       },
     });
+    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs and swallows callback failures after settings mutation', async () => {
+    const callbackError = new Error('callback failed');
+    onSettingsUpdatedMock.mockRejectedValueOnce(callbackError);
+    const handler = getHandler('setting:update');
+
+    await expect(handler({}, unsafeSettings)).resolves.toBeUndefined();
+
+    expect(setStoreMock).toHaveBeenCalledTimes(1);
+    expect(loggerErrorMock).toHaveBeenCalledWith(
+      'Failed to handle settings update callback:',
+      callbackError,
+    );
   });
 });

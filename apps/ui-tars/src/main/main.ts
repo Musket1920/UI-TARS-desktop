@@ -328,7 +328,9 @@ const registerIPCHandlers = (
     await UTIOService.getInstance().shareReport(params);
   });
 
-  registerSettingsHandlers();
+  registerSettingsHandlers(async () => {
+    await startAgentSSidecarIfNeeded();
+  });
   // register ipc services routes
   registerIpcMain(ipcRoutes);
 

@@ -12,7 +12,23 @@ const enforceAgentSSafetyDefaults = (settings: LocalStore): LocalStore => {
   return enforceAgentSSafetyPolicy(settings);
 };
 
-export function registerSettingsHandlers() {
+export function registerSettingsHandlers(
+  onSettingsUpdated?: (settings: LocalStore) => Promise<void> | void,
+) {
+  const notifySettingsUpdated = async () => {
+    if (!onSettingsUpdated) {
+      return;
+    }
+
+    const latestSettings = SettingStore.getStore();
+
+    try {
+      await onSettingsUpdated(latestSettings);
+    } catch (error) {
+      logger.error('Failed to handle settings update callback:', error);
+    }
+  };
+
   /**
    * Get setting
    */
@@ -39,6 +55,7 @@ export function registerSettingsHandlers() {
    */
   ipcMain.handle('setting:update', async (_, settings: LocalStore) => {
     SettingStore.setStore(enforceAgentSSafetyDefaults(settings));
+    await notifySettingsUpdated();
   });
 
   /**
@@ -48,6 +65,7 @@ export function registerSettingsHandlers() {
     try {
       const newSettings = await SettingStore.importPresetFromText(yamlContent);
       SettingStore.setStore(enforceAgentSSafetyDefaults(newSettings));
+      await notifySettingsUpdated();
     } catch (error) {
       logger.error('Failed to import preset:', error);
       throw error;
@@ -69,6 +87,7 @@ export function registerSettingsHandlers() {
           lastUpdated: Date.now(),
         },
       });
+      await notifySettingsUpdated();
     } catch (error) {
       logger.error('Failed to import preset from URL:', error);
       throw error;
@@ -93,6 +112,7 @@ export function registerSettingsHandlers() {
           lastUpdated: Date.now(),
         },
       });
+      await notifySettingsUpdated();
     } else {
       throw new Error('No remote preset configured');
     }
