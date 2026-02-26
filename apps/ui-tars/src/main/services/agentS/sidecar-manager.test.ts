@@ -65,7 +65,7 @@ describe('sidecar-manager', () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({}),
+      json: async () => ({ healthy: true }),
     } as Response);
 
     const manager = new AgentSSidecarManager({
@@ -338,5 +338,87 @@ describe('sidecar-manager', () => {
     expect(command).toBe('agent_s');
     expect(spawnedArgs).toEqual(['--port', '10800']);
     expect(options).toMatchObject({ windowsHide: true });
+  });
+
+  it('treats explicit healthy payload marker as healthy', async () => {
+    const child = new MockChildProcess(1234);
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ healthy: true }),
+    } as Response);
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const status = await manager.start({
+      mode: 'embedded',
+      command: 'python',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9600',
+      startupTimeoutMs: 800,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+
+    expect(status.state).toBe('running');
+    expect(status.healthy).toBe(true);
+  });
+
+  it('treats explicit unhealthy payload marker as unhealthy and times out startup', async () => {
+    const child = new MockChildProcess(1235);
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ healthy: false }),
+    } as Response);
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const startPromise = manager.start({
+      mode: 'embedded',
+      command: 'python',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9601',
+      startupTimeoutMs: 600,
+      startupPollIntervalMs: 100,
+      healthTimeoutMs: 300,
+      shutdownTimeoutMs: 200,
+    });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    const status = await startPromise;
+
+    expect(status.state).toBe('timeout');
+    expect(status.healthy).toBe(false);
+    expect(status.reason).toBe('startup_timeout');
+  });
+
+  it('fails closed for malformed or ambiguous health payloads', async () => {
+    const manager = new AgentSSidecarManager();
+    const extractHealthFromPayload = (
+      manager as unknown as {
+        extractHealthFromPayload: (payload: unknown) => boolean;
+      }
+    ).extractHealthFromPayload;
+
+    expect(extractHealthFromPayload(undefined)).toBe(false);
+    expect(extractHealthFromPayload({})).toBe(false);
+    expect(extractHealthFromPayload({ healthy: 'true' })).toBe(false);
+    expect(extractHealthFromPayload({ status: 'unknown' })).toBe(false);
   });
 });

@@ -938,7 +938,7 @@ export class AgentSSidecarManager {
 
   private extractHealthFromPayload(payload: unknown): boolean {
     if (!payload || typeof payload !== 'object') {
-      return true;
+      return false;
     }
 
     const candidate = payload as Record<string, unknown>;
@@ -952,7 +952,7 @@ export class AgentSSidecarManager {
       return ['ok', 'healthy', 'running', 'up'].includes(normalizedStatus);
     }
 
-    return true;
+    return false;
   }
 
   private attachChildListeners(child: ChildProcess, lifecycleMarker: number) {

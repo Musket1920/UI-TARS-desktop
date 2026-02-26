@@ -8,6 +8,7 @@ import { VLMProviderV2 } from '@main/store/types';
 import type { AppState, LocalStore } from '@main/store/types';
 import { runAgentSRuntimeLoop } from './runtimeLoop';
 import type { AgentSRuntimeOperator } from './runtimeLoop';
+import { isAgentSActive, setAgentSActive } from './lifecycle';
 
 const { translateAgentSActionMock, jimpFromBuffer } = vi.hoisted(() => ({
   translateAgentSActionMock: vi.fn(),
@@ -102,32 +103,8 @@ const createFakeSidecarManager = () => {
   };
 };
 
-const successFetch: typeof fetch = async () => {
-  return {
-    ok: true,
-    status: 200,
-    json: async () => ({
-      action: 'finished',
-      prediction: 'finished',
-    }),
-  } as unknown as Response;
-};
-
-const timeoutFetch: typeof fetch = async (_url, options) => {
-  return new Promise((_resolve, reject) => {
-    const signal = options?.signal;
-    if (signal?.aborted) {
-      reject(new Error('fetch aborted'));
-      return;
-    }
-
-    const onAbort = () => {
-      signal?.removeEventListener('abort', onAbort);
-      reject(new Error('fetch aborted'));
-    };
-
-    signal?.addEventListener('abort', onAbort);
-  }) as unknown as ReturnType<typeof fetch>;
+const failingFetch: typeof fetch = async () => {
+  throw new Error('network down');
 };
 
 describe('agent-s-runtime runAgentSRuntimeLoop', () => {
@@ -139,6 +116,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
         height: 360,
       },
     });
+    setAgentSActive(false);
   });
 
   it('executes one successful turn and records state updates', async () => {
@@ -157,7 +135,30 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
       },
     });
 
-    const result = await runAgentSRuntimeLoop({
+    const deferredFetch = (() => {
+      let resolveResponse: ((value: Response) => void) | undefined;
+      const pending = new Promise<Response>((resolve) => {
+        resolveResponse = resolve;
+      });
+
+      const fetchMock: typeof fetch = async () => pending;
+
+      return {
+        fetchMock,
+        resolve: () => {
+          resolveResponse?.({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              action: 'finished',
+              prediction: 'finished',
+            }),
+          } as unknown as Response);
+        },
+      };
+    })();
+
+    const loopPromise = runAgentSRuntimeLoop({
       setState,
       getState,
       settings: createSettings(),
@@ -165,19 +166,26 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
       instruction: 'wrap up the job',
       sessionHistoryMessages: [],
       deps: {
-        fetch: successFetch,
+        fetch: deferredFetch.fetchMock,
         sidecarManager,
         now: () => 1_234,
       },
     });
 
+    expect(isAgentSActive()).toBe(true);
+
+    deferredFetch.resolve();
+
+    const result = await loopPromise;
+
     expect(result.status).toBe(StatusEnum.END);
     expect(result.stepsExecuted).toBeGreaterThanOrEqual(1);
     expect(operator.execute).toHaveBeenCalledTimes(1);
     expect(history.some((state) => state.status === StatusEnum.END)).toBe(true);
+    expect(isAgentSActive()).toBe(false);
   });
 
-  it('surfaces a timeout error when prediction never resolves', async () => {
+  it('resets active lifecycle state after an error exit', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();
     const sidecarManager = createFakeSidecarManager();
@@ -190,17 +198,18 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
       instruction: 'trigger timeout',
       sessionHistoryMessages: [],
       deps: {
-        fetch: timeoutFetch,
+        fetch: failingFetch,
         sidecarManager,
         now: () => 1_234,
       },
     });
 
     expect(result.status).toBe(StatusEnum.ERROR);
-    expect(result.error?.code).toBe('AGENT_S_TURN_TIMEOUT');
+    expect(result.error?.code).toBe('AGENT_S_TURN_REQUEST_FAILED');
     expect(result.stepsExecuted).toBeGreaterThanOrEqual(0);
     expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
       true,
     );
+    expect(isAgentSActive()).toBe(false);
   });
 });

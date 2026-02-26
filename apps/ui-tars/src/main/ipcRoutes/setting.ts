@@ -39,7 +39,6 @@ export const settingRoute = t.router({
           input: 'return 1+1=?',
           stream: false,
         });
-        console.log('result', result);
         return Boolean(result?.id || result?.previous_response_id);
       } catch (e) {
         logger.warn('[checkVLMResponseApiSupport] failed:', e);
@@ -55,7 +54,6 @@ export const settingRoute = t.router({
         messages: [{ role: 'user', content: 'return 1+1=?' }],
         stream: false,
       });
-      console.log('result', completion);
 
       return Boolean(completion?.id || completion.choices[0].message.content);
     }),

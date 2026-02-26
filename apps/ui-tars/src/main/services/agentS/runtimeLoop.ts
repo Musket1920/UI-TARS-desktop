@@ -689,6 +689,8 @@ export const runAgentSRuntimeLoop = async (
       stepsExecuted: Math.max(runtimePayload.step, 0),
       error: runtimePayload,
     };
+  } finally {
+    setAgentSActive(false);
   }
 };
 
