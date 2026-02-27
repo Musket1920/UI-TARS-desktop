@@ -91,6 +91,15 @@ const buildHealthPresentation = (sidecarStatus: SidecarStatus) => {
 
   const failureClass = classifyAgentSFailureReason(reasonCode);
 
+  if (!sidecarStatus.healthy && sidecarStatus.state === 'starting') {
+    return {
+      status: 'degraded' as const,
+      message: 'Model loading... Legacy fallback is active.',
+      reasonCode,
+      failureClass,
+    };
+  }
+
   if (failureClass === 'timeout') {
     return {
       status: 'degraded' as const,

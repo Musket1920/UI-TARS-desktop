@@ -202,6 +202,30 @@ describe('ipc-agent-s-health route payload', () => {
     expect(payload.timestamp).toBe(1700000000999);
   });
 
+  it('reports model loading message while sidecar is starting', async () => {
+    sidecarHealthMock.mockResolvedValue({
+      state: 'starting',
+      mode: null,
+      healthy: false,
+      endpoint: null,
+      pid: null,
+      checkedAt: 1700000004444,
+      lastHeartbeatAt: null,
+      reason: 'startup_timeout',
+    });
+
+    const payload = await agentRoute.getAgentSHealth.handle({
+      input: undefined,
+      context: {} as GetAgentSHealthContext,
+    });
+
+    expect(payload.status).toBe('degraded');
+    expect(payload.message).toContain('Model loading...');
+    expect(payload.reasonCode).toBe('startup_timeout');
+    expect(payload.failureClass).toBe('timeout');
+    expect(payload.timestamp).toBe(1700000004444);
+  });
+
   it('falls back to current status when probe throws', async () => {
     sidecarHealthMock.mockRejectedValue(new Error('probe failed'));
     sidecarGetStatusMock.mockReturnValue({
