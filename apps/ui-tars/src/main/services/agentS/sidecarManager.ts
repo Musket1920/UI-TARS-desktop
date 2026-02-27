@@ -156,7 +156,7 @@ const DEFAULT_STARTUP_POLL_INTERVAL_MS = 250;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 5_000;
 const DEFAULT_HEALTH_TIMEOUT_MS = 2_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 3_000;
-const DEFAULT_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
+const DEFAULT_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5;
 const DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MS = 20_000;
 
 const MIN_TIMEOUT_MS = 50;
@@ -460,6 +460,22 @@ export class AgentSSidecarManager {
     if (didOpen || isProbeFailure) {
       emitAgentSTelemetry(
         'agent_s.fallback.triggered',
+        {
+          source: 'agent_s.circuit_breaker',
+          reasonCode: didOpen
+            ? 'circuit_breaker_open'
+            : 'circuit_breaker_probe_failed',
+          failureReason: reasonCode,
+          failureClass,
+          state: this.circuitBreakerState.state,
+          consecutiveFailures: this.circuitBreakerState.consecutiveFailures,
+          threshold: this.circuitBreakerConfig.failureThreshold,
+          cooldownMs: this.circuitBreakerConfig.cooldownMs,
+        },
+        { level: 'warn', correlation: this.telemetryCorrelation },
+      );
+      emitAgentSTelemetry(
+        'engine_fallback_triggered',
         {
           source: 'agent_s.circuit_breaker',
           reasonCode: didOpen
@@ -1086,6 +1102,25 @@ export class AgentSSidecarManager {
       },
     );
 
+    if (!this.status.healthy && this.status.reason !== 'stop_requested') {
+      emitAgentSTelemetry(
+        'sidecar_health_degraded',
+        {
+          state: this.status.state,
+          healthy: this.status.healthy,
+          mode: this.status.mode,
+          endpoint: this.status.endpoint,
+          pid: this.status.pid,
+          reason: this.status.reason ?? null,
+          httpStatus: this.status.httpStatus ?? null,
+        },
+        {
+          level: 'warn',
+          correlation: this.telemetryCorrelation,
+        },
+      );
+    }
+
     if (this.status.healthy) {
       this.lastFallbackEventSignature = null;
       return;
@@ -1103,6 +1138,17 @@ export class AgentSSidecarManager {
     this.lastFallbackEventSignature = fallbackSignature;
     emitAgentSTelemetry(
       'agent_s.fallback.triggered',
+      {
+        source: 'agent_s.sidecar',
+        reasonCode: this.status.reason,
+        state: this.status.state,
+        endpoint: this.status.endpoint,
+        mode: this.status.mode,
+      },
+      { level: 'warn', correlation: this.telemetryCorrelation },
+    );
+    emitAgentSTelemetry(
+      'engine_fallback_triggered',
       {
         source: 'agent_s.sidecar',
         reasonCode: this.status.reason,

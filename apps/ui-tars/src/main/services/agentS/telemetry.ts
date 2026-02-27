@@ -15,7 +15,10 @@ export type AgentSTelemetryEventName =
   | 'agent_s.sidecar.stop'
   | 'agent_s.engine.selected'
   | 'agent_s.runtime.error'
-  | 'agent_s.fallback.triggered';
+  | 'agent_s.fallback.triggered'
+  | 'engine_fallback_triggered'
+  | 'turn_timeout'
+  | 'sidecar_health_degraded';
 
 export type AgentSTelemetryEvent = {
   event: AgentSTelemetryEventName;

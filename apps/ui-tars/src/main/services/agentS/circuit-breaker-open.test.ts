@@ -56,6 +56,7 @@ describe('circuit-breaker-open Agent-S circuit breaker', () => {
     const stillClosed = manager.getCircuitBreakerStatus();
     expect(stillClosed.state).toBe('closed');
     expect(stillClosed.consecutiveFailures).toBe(1);
+    expect(stillClosed.failureThreshold).toBe(2);
 
     now = 11;
     manager.recordCircuitFailure({
@@ -66,10 +67,18 @@ describe('circuit-breaker-open Agent-S circuit breaker', () => {
     expect(opened.state).toBe('open');
     expect(opened.consecutiveFailures).toBe(2);
     expect(opened.openedAt).toBe(11);
+    expect(opened.failureThreshold).toBe(2);
 
     const decision = await manager.evaluateDispatchCircuit();
     expect(decision.allowAgentS).toBe(false);
     expect(decision.reasonCode).toBe('circuit_breaker_open');
     expect(decision.breaker.state).toBe('open');
+  });
+
+  it('defaults failure threshold to 5 when env override is absent', () => {
+    delete process.env.AGENT_S_CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+    const manager = new AgentSSidecarManager();
+    const status = manager.getCircuitBreakerStatus();
+    expect(status.failureThreshold).toBe(5);
   });
 });

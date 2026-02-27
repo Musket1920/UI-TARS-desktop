@@ -108,7 +108,10 @@ describe('agent-s failure paths', () => {
         fetch: fetchMock as typeof fetch,
       });
 
-      for (let i = 0; i < 3; i += 1) {
+      const { failureThreshold } = manager.getCircuitBreakerStatus();
+      expect(failureThreshold).toBeGreaterThanOrEqual(1);
+
+      for (let i = 0; i < failureThreshold; i += 1) {
         manager.recordCircuitFailure({
           reasonCode: 'AGENT_S_TURN_TIMEOUT',
         });
@@ -118,10 +121,22 @@ describe('agent-s failure paths', () => {
       expect(status.state).toBe('open');
       expect(status.lastFailureCode).toBe('AGENT_S_TURN_TIMEOUT');
       expect(status.lastFailureClass).toBe('timeout');
-      expect(status.consecutiveFailures).toBeGreaterThanOrEqual(3);
+      expect(status.consecutiveFailures).toBeGreaterThanOrEqual(
+        failureThreshold,
+      );
 
       expect(emitAgentSTelemetryMock).toHaveBeenCalledWith(
         'agent_s.fallback.triggered',
+        expect.objectContaining({
+          failureReason: 'AGENT_S_TURN_TIMEOUT',
+          failureClass: 'timeout',
+          reasonCode: 'circuit_breaker_open',
+          state: 'open',
+        }),
+        expect.objectContaining({ level: 'warn' }),
+      );
+      expect(emitAgentSTelemetryMock).toHaveBeenCalledWith(
+        'engine_fallback_triggered',
         expect.objectContaining({
           failureReason: 'AGENT_S_TURN_TIMEOUT',
           failureClass: 'timeout',

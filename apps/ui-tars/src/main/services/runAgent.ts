@@ -85,6 +85,18 @@ const emitDispatcherFallbackTelemetry = (
       correlation,
     },
   );
+
+  emitAgentSTelemetry(
+    'engine_fallback_triggered',
+    {
+      source: 'agent_s.dispatcher',
+      ...payload,
+    },
+    {
+      level: 'warn',
+      correlation,
+    },
+  );
 };
 
 export const runAgent = async (
@@ -462,6 +474,15 @@ export const runAgent = async (
           },
           { level: 'warn', correlation: runCorrelation },
         );
+        emitAgentSTelemetry(
+          'engine_fallback_triggered',
+          {
+            source: 'agent_s.runtime',
+            reasonCode: 'runtime_error',
+            operator: settings.operator,
+          },
+          { level: 'warn', correlation: runCorrelation },
+        );
       }
       setState({
         ...getState(),
@@ -523,6 +544,15 @@ export const runAgent = async (
         );
         emitAgentSTelemetry(
           'agent_s.fallback.triggered',
+          {
+            source: 'agent_s.runtime',
+            reasonCode: 'run_loop_error',
+            operator: settings.operator,
+          },
+          { level: 'warn', correlation: runCorrelation },
+        );
+        emitAgentSTelemetry(
+          'engine_fallback_triggered',
           {
             source: 'agent_s.runtime',
             reasonCode: 'run_loop_error',

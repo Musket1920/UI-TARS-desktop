@@ -117,6 +117,20 @@ export type RunAgentSRuntimeLoopArgs = {
   deps?: Partial<AgentSRuntimeDependencies>;
 };
 
+type SidecarPredictionRequestParams = {
+  endpoint: string;
+  instruction: string;
+  screenshot: ScreenshotOutput;
+  screenWidth: number;
+  screenHeight: number;
+  turnTimeoutMs: number;
+  providerConfig: ReturnType<typeof mapProviderToAgentSConfig>;
+  sessionHistoryMessages: Message[];
+  step: number;
+  abortSignal?: AbortSignal;
+  correlation?: AgentSCorrelationIds;
+};
+
 class AgentSRuntimeError extends Error {
   constructor(
     readonly payload: AgentSRuntimeErrorPayload,
@@ -236,18 +250,7 @@ const resolveStatusFromAction = (
 
 const requestSidecarPrediction = async (
   deps: AgentSRuntimeDependencies,
-  params: {
-    endpoint: string;
-    instruction: string;
-    screenshot: ScreenshotOutput;
-    screenWidth: number;
-    screenHeight: number;
-    turnTimeoutMs: number;
-    providerConfig: ReturnType<typeof mapProviderToAgentSConfig>;
-    sessionHistoryMessages: Message[];
-    step: number;
-    abortSignal?: AbortSignal;
-  },
+  params: SidecarPredictionRequestParams,
 ): Promise<SidecarPredictionResult> => {
   const controller = new AbortController();
   let abortCause: 'timeout' | 'user' | null = null;
@@ -325,6 +328,19 @@ const requestSidecarPrediction = async (
   } catch (error) {
     if (controller.signal.aborted) {
       if (abortCause === 'timeout') {
+        emitAgentSTelemetry(
+          'turn_timeout',
+          {
+            source: 'agent_s.runtime.request',
+            timeoutMs: params.turnTimeoutMs,
+            step: params.step,
+          },
+          {
+            level: 'warn',
+            correlation: params.correlation,
+          },
+        );
+
         throw runtimeError({
           code: 'AGENT_S_TURN_TIMEOUT',
           message: `Agent-S turn timed out in ${params.turnTimeoutMs}ms`,
@@ -488,6 +504,7 @@ export const runAgentSRuntimeLoop = async (
         sessionHistoryMessages: args.sessionHistoryMessages,
         step,
         abortSignal: args.getState().abortController?.signal,
+        correlation: args.correlation,
       });
 
       const translated = translateAgentSAction(prediction.action);
@@ -621,6 +638,18 @@ export const runAgentSRuntimeLoop = async (
     );
     emitAgentSTelemetry(
       'agent_s.fallback.triggered',
+      {
+        source: 'agent_s.runtime',
+        reasonCode: runtimePayload.code,
+        failureClass: classifyAgentSFailureReason(runtimePayload.code),
+      },
+      {
+        level: 'warn',
+        correlation: args.correlation,
+      },
+    );
+    emitAgentSTelemetry(
+      'engine_fallback_triggered',
       {
         source: 'agent_s.runtime',
         reasonCode: runtimePayload.code,
