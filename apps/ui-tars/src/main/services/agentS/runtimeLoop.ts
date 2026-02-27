@@ -126,6 +126,12 @@ class AgentSRuntimeError extends Error {
   }
 }
 
+class AgentSRuntimeStoppedError extends Error {
+  constructor(readonly step: number) {
+    super('Agent-S runtime stopped by user');
+  }
+}
+
 const normalizeMaxSteps = (settings: LocalStore): number => {
   if (
     typeof settings.maxLoopCount !== 'number' ||
@@ -240,10 +246,30 @@ const requestSidecarPrediction = async (
     providerConfig: ReturnType<typeof mapProviderToAgentSConfig>;
     sessionHistoryMessages: Message[];
     step: number;
+    abortSignal?: AbortSignal;
   },
 ): Promise<SidecarPredictionResult> => {
   const controller = new AbortController();
+  let abortCause: 'timeout' | 'user' | null = null;
+  const handleExternalAbort = () => {
+    if (!abortCause) {
+      abortCause = 'user';
+    }
+    controller.abort();
+  };
+
+  if (params.abortSignal?.aborted) {
+    handleExternalAbort();
+  } else {
+    params.abortSignal?.addEventListener('abort', handleExternalAbort, {
+      once: true,
+    });
+  }
+
   const timeout = deps.setTimeout(() => {
+    if (!abortCause) {
+      abortCause = 'timeout';
+    }
     controller.abort();
   }, params.turnTimeoutMs);
 
@@ -298,11 +324,17 @@ const requestSidecarPrediction = async (
     return parsed;
   } catch (error) {
     if (controller.signal.aborted) {
-      throw runtimeError({
-        code: 'AGENT_S_TURN_TIMEOUT',
-        message: `Agent-S turn timed out in ${params.turnTimeoutMs}ms`,
-        step: params.step,
-      });
+      if (abortCause === 'timeout') {
+        throw runtimeError({
+          code: 'AGENT_S_TURN_TIMEOUT',
+          message: `Agent-S turn timed out in ${params.turnTimeoutMs}ms`,
+          step: params.step,
+        });
+      }
+
+      if (abortCause === 'user' || params.abortSignal?.aborted) {
+        throw new AgentSRuntimeStoppedError(params.step);
+      }
     }
 
     if (error instanceof AgentSRuntimeError) {
@@ -318,6 +350,7 @@ const requestSidecarPrediction = async (
       error,
     );
   } finally {
+    params.abortSignal?.removeEventListener('abort', handleExternalAbort);
     deps.clearTimeout(timeout);
   }
 };
@@ -454,6 +487,7 @@ export const runAgentSRuntimeLoop = async (
         providerConfig,
         sessionHistoryMessages: args.sessionHistoryMessages,
         step,
+        abortSignal: args.getState().abortController?.signal,
       });
 
       const translated = translateAgentSAction(prediction.action);
@@ -546,6 +580,17 @@ export const runAgentSRuntimeLoop = async (
       step: maxSteps,
     });
   } catch (error) {
+    if (error instanceof AgentSRuntimeStoppedError) {
+      appendState(args.setState, args.getState, {
+        status: StatusEnum.USER_STOPPED,
+      });
+
+      return {
+        status: StatusEnum.USER_STOPPED,
+        stepsExecuted: Math.max(error.step - 1, 0),
+      };
+    }
+
     const runtimePayload: AgentSRuntimeErrorPayload =
       error instanceof AgentSRuntimeError
         ? error.payload

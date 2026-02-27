@@ -107,6 +107,11 @@ const failingFetch: typeof fetch = async () => {
   throw new Error('network down');
 };
 
+const flushMicrotasks = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
 describe('agent-s-runtime runAgentSRuntimeLoop', () => {
   beforeEach(() => {
     translateAgentSActionMock.mockReset();
@@ -246,6 +251,160 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
       true,
     );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('finishes with USER_STOPPED without timeout when pending predict is aborted', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = createFakeSidecarManager();
+    const externalAbortController = new AbortController();
+
+    setState({
+      ...getState(),
+      abortController: externalAbortController,
+    });
+
+    let capturedSignal: AbortSignal | null = null;
+    let fetchAbortTriggered = false;
+    let resolveStarted: () => void = () => {};
+    const fetchStarted = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+
+    const pendingFetch: typeof fetch = async (_input, init) => {
+      capturedSignal = init?.signal ?? null;
+      resolveStarted();
+
+      return await new Promise<Response>((_resolve, reject) => {
+        if (!capturedSignal) {
+          reject(new Error('missing abort signal'));
+          return;
+        }
+
+        if (capturedSignal.aborted) {
+          fetchAbortTriggered = true;
+          reject(new Error('already aborted'));
+          return;
+        }
+
+        capturedSignal.addEventListener(
+          'abort',
+          () => {
+            fetchAbortTriggered = true;
+            reject(new Error('predict aborted by controller'));
+          },
+          { once: true },
+        );
+      });
+    };
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'stop pending predict',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: pendingFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    await fetchStarted;
+    await flushMicrotasks();
+    if (!capturedSignal) {
+      throw new Error('expected runtime to provide fetch abort signal');
+    }
+
+    externalAbortController.abort();
+
+    const result = await loopPromise;
+
+    expect(fetchAbortTriggered).toBe(true);
+    expect(result.status).toBe(StatusEnum.USER_STOPPED);
+    expect(result.error).toBeUndefined();
+    expect(result.error?.code).not.toBe('AGENT_S_TURN_TIMEOUT');
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(
+      history.some((state) => state.status === StatusEnum.USER_STOPPED),
+    ).toBe(true);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      false,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('records USER_STOPPED when runtime abort controller cancels in-flight predict', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = createFakeSidecarManager();
+    const abortController = new AbortController();
+
+    setState({
+      ...getState(),
+      abortController,
+    });
+
+    let startedResolve: () => void = () => {};
+    const startedPromise = new Promise<void>((resolve) => {
+      startedResolve = resolve;
+    });
+
+    let capturedSignal: AbortSignal | null = null;
+    const pendingFetch: typeof fetch = async (_input, init) => {
+      capturedSignal = init?.signal ?? null;
+      startedResolve();
+
+      return await new Promise<Response>((_resolve, reject) => {
+        const signal = capturedSignal;
+
+        if (!signal) {
+          reject(new Error('missing abort signal'));
+          return;
+        }
+
+        const abortError =
+          typeof DOMException !== 'undefined'
+            ? new DOMException('Aborted', 'AbortError')
+            : new Error('aborted');
+
+        const onAbort = () => {
+          signal.removeEventListener('abort', onAbort);
+          reject(abortError);
+        };
+
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+    };
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'stop pending predict',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: pendingFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    await startedPromise;
+    abortController.abort();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.USER_STOPPED);
+    expect(result.error).toBeUndefined();
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(
+      history.some((state) => state.status === StatusEnum.USER_STOPPED),
+    ).toBe(true);
     expect(isAgentSActive()).toBe(false);
   });
 });
