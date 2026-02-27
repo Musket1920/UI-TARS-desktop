@@ -14,6 +14,7 @@ import {
   emitAgentSTelemetry,
   sanitizeCommandArgs,
 } from './telemetry';
+import { isExplicitHealthyHealthPayload } from './sidecarSchemas';
 
 export type SidecarMode = 'embedded' | 'external';
 
@@ -937,22 +938,7 @@ export class AgentSSidecarManager {
   }
 
   private extractHealthFromPayload(payload: unknown): boolean {
-    if (!payload || typeof payload !== 'object') {
-      return false;
-    }
-
-    const candidate = payload as Record<string, unknown>;
-
-    if (typeof candidate.healthy === 'boolean') {
-      return candidate.healthy;
-    }
-
-    if (typeof candidate.status === 'string') {
-      const normalizedStatus = candidate.status.toLowerCase();
-      return ['ok', 'healthy', 'running', 'up'].includes(normalizedStatus);
-    }
-
-    return false;
+    return isExplicitHealthyHealthPayload(payload);
   }
 
   private attachChildListeners(child: ChildProcess, lifecycleMarker: number) {

@@ -421,4 +421,38 @@ describe('sidecar-manager', () => {
     expect(extractHealthFromPayload({ healthy: 'true' })).toBe(false);
     expect(extractHealthFromPayload({ status: 'unknown' })).toBe(false);
   });
+
+  it('accepts explicit schema-driven healthy status markers', async () => {
+    const manager = new AgentSSidecarManager();
+    const extractHealthFromPayload = (
+      manager as unknown as {
+        extractHealthFromPayload: (payload: unknown) => boolean;
+      }
+    ).extractHealthFromPayload;
+
+    expect(extractHealthFromPayload({ healthy: true })).toBe(true);
+    expect(extractHealthFromPayload({ status: 'running' })).toBe(true);
+    expect(extractHealthFromPayload({ status: 'UP' })).toBe(true);
+    expect(extractHealthFromPayload({ healthy: true, status: 'ok' })).toBe(
+      true,
+    );
+  });
+
+  it('rejects ambiguous health payloads that do not match strict schema', async () => {
+    const manager = new AgentSSidecarManager();
+    const extractHealthFromPayload = (
+      manager as unknown as {
+        extractHealthFromPayload: (payload: unknown) => boolean;
+      }
+    ).extractHealthFromPayload;
+
+    expect(extractHealthFromPayload({ healthy: true, status: 'unknown' })).toBe(
+      false,
+    );
+    expect(
+      extractHealthFromPayload({ healthy: false, status: 'running' }),
+    ).toBe(false);
+    expect(extractHealthFromPayload({ status: '' })).toBe(false);
+    expect(extractHealthFromPayload({ status: ['running'] })).toBe(false);
+  });
 });

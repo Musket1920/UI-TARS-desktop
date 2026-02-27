@@ -30,6 +30,25 @@ describe('validatePreset schema for Agent-S settings', () => {
     expect(validated.agentSEnableLocalEnv).toBeUndefined();
   });
 
+  it('handles legacy empty payloads while rejecting malformed critical values', () => {
+    const validated = validatePreset({
+      ...basePreset(),
+      engineMode: EngineMode.UITARS,
+    });
+
+    expect(validated.engineMode).toBe(EngineMode.UITARS);
+    expect(validated.agentSSidecarMode).toBeUndefined();
+    expect(validated.agentSSidecarUrl).toBeUndefined();
+    expect(validated.agentSEnableLocalEnv).toBeUndefined();
+
+    expect(() =>
+      validatePreset({
+        ...basePreset(),
+        vlmBaseUrl: '',
+      }),
+    ).toThrow(/vlmBaseUrl/);
+  });
+
   it('accepts Agent-S config with remote sidecar details', () => {
     const validated = validatePreset({
       ...basePreset(),

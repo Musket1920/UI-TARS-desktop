@@ -21,10 +21,7 @@ import {
 } from '@ui-tars/sdk/core';
 import { Jimp } from 'jimp';
 
-import {
-  type AgentSActionLikeInput,
-  translateAgentSAction,
-} from './actionTranslator';
+import { translateAgentSAction } from './actionTranslator';
 import {
   mapProviderToAgentSConfig,
   redactSensitiveConfig,
@@ -36,6 +33,10 @@ import {
   type SidecarFailureReason,
   type SidecarStatus,
 } from './sidecarManager';
+import {
+  parseSidecarPredictionPayload,
+  type SidecarPredictionResult,
+} from './sidecarSchemas';
 import { ensureAgentSNotPaused, setAgentSActive } from './lifecycle';
 import {
   type AgentSCorrelationIds,
@@ -114,11 +115,6 @@ export type RunAgentSRuntimeLoopArgs = {
   sessionHistoryMessages: Message[];
   correlation?: AgentSCorrelationIds;
   deps?: Partial<AgentSRuntimeDependencies>;
-};
-
-type SidecarPredictionResult = {
-  action: AgentSActionLikeInput;
-  predictionText: string;
 };
 
 class AgentSRuntimeError extends Error {
@@ -232,94 +228,6 @@ const resolveStatusFromAction = (
   return StatusEnum.RUNNING;
 };
 
-const extractActionCandidate = (
-  value: unknown,
-): AgentSActionLikeInput | null => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
-  }
-
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-
-  return null;
-};
-
-const parseSidecarPrediction = (
-  payload: unknown,
-): SidecarPredictionResult | null => {
-  const pickFromRecord = (
-    record: Record<string, unknown>,
-  ): SidecarPredictionResult | null => {
-    const actionSources: unknown[] = [];
-
-    if (Array.isArray(record.actions) && record.actions.length > 0) {
-      actionSources.push(record.actions[0]);
-    }
-
-    actionSources.push(
-      record.action,
-      record.nextAction,
-      record.next_action,
-      record.code,
-      record.prediction,
-    );
-
-    for (const source of actionSources) {
-      const candidate = extractActionCandidate(source);
-      if (!candidate) {
-        continue;
-      }
-
-      return {
-        action: candidate,
-        predictionText:
-          typeof record.prediction === 'string'
-            ? record.prediction
-            : typeof source === 'string'
-              ? source
-              : JSON.stringify(candidate),
-      };
-    }
-
-    return null;
-  };
-
-  const direct = extractActionCandidate(payload);
-  if (direct) {
-    return {
-      action: direct,
-      predictionText:
-        typeof payload === 'string' ? payload : JSON.stringify(payload),
-    };
-  }
-
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
-
-  const root = payload as Record<string, unknown>;
-  const nestedCandidates = [root, root.data, root.result].filter(Boolean);
-  for (const candidate of nestedCandidates) {
-    if (
-      !candidate ||
-      typeof candidate !== 'object' ||
-      Array.isArray(candidate)
-    ) {
-      continue;
-    }
-
-    const parsed = pickFromRecord(candidate as Record<string, unknown>);
-    if (parsed) {
-      return parsed;
-    }
-  }
-
-  return null;
-};
-
 const requestSidecarPrediction = async (
   deps: AgentSRuntimeDependencies,
   params: {
@@ -374,7 +282,7 @@ const requestSidecarPrediction = async (
     }
 
     const payload = (await response.json().catch(() => null)) as unknown;
-    const parsed = parseSidecarPrediction(payload);
+    const parsed = parseSidecarPredictionPayload(payload);
 
     if (!parsed) {
       throw runtimeError(

@@ -212,4 +212,40 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     );
     expect(isAgentSActive()).toBe(false);
   });
+
+  it('rejects malformed predict payload with AGENT_S_PREDICTION_MALFORMED', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = createFakeSidecarManager();
+
+    const malformedPredictFetch: typeof fetch = async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: [] }),
+      }) as Response;
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'produce malformed prediction',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: malformedPredictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_PREDICTION_MALFORMED');
+    expect(result.error?.step).toBe(1);
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
 });
