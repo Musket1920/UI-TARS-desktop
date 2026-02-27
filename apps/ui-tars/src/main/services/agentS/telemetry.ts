@@ -7,6 +7,7 @@ import { logger } from '@main/logger';
 export type AgentSCorrelationIds = {
   runId?: string | null;
   sessionId?: string | null;
+  turnId?: string | null;
 };
 
 export type AgentSTelemetryEventName =
@@ -24,6 +25,7 @@ export type AgentSTelemetryEvent = {
   event: AgentSTelemetryEventName;
   runId: string | null;
   sessionId: string | null;
+  turnId: string | null;
   payload: Record<string, unknown>;
 };
 
@@ -141,6 +143,7 @@ export const createAgentSTelemetryEvent = (
     event,
     runId: correlation.runId ?? null,
     sessionId: correlation.sessionId ?? null,
+    turnId: correlation.turnId ?? null,
     payload: sanitizeAgentSPayload(payload),
   };
 };

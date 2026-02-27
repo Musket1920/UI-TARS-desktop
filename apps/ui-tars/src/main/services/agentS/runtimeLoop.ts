@@ -328,6 +328,10 @@ const requestSidecarPrediction = async (
   } catch (error) {
     if (controller.signal.aborted) {
       if (abortCause === 'timeout') {
+        const timeoutCorrelation = params.correlation
+          ? { ...params.correlation, turnId: String(params.step) }
+          : params.correlation;
+
         emitAgentSTelemetry(
           'turn_timeout',
           {
@@ -337,7 +341,7 @@ const requestSidecarPrediction = async (
           },
           {
             level: 'warn',
-            correlation: params.correlation,
+            correlation: timeoutCorrelation,
           },
         );
 
@@ -504,7 +508,9 @@ export const runAgentSRuntimeLoop = async (
         sessionHistoryMessages: args.sessionHistoryMessages,
         step,
         abortSignal: args.getState().abortController?.signal,
-        correlation: args.correlation,
+        correlation: args.correlation
+          ? { ...args.correlation, turnId: String(step) }
+          : args.correlation,
       });
 
       const translated = translateAgentSAction(prediction.action);
@@ -616,6 +622,9 @@ export const runAgentSRuntimeLoop = async (
             message: error instanceof Error ? error.message : String(error),
             step: 0,
           };
+    const runtimeCorrelation = args.correlation
+      ? { ...args.correlation, turnId: String(runtimePayload.step) }
+      : args.correlation;
 
     logger.error(
       '[agentS runtime] turn failed',
@@ -633,7 +642,7 @@ export const runAgentSRuntimeLoop = async (
       },
       {
         level: 'error',
-        correlation: args.correlation,
+        correlation: runtimeCorrelation,
       },
     );
     emitAgentSTelemetry(
@@ -645,7 +654,7 @@ export const runAgentSRuntimeLoop = async (
       },
       {
         level: 'warn',
-        correlation: args.correlation,
+        correlation: runtimeCorrelation,
       },
     );
     emitAgentSTelemetry(
@@ -657,7 +666,7 @@ export const runAgentSRuntimeLoop = async (
       },
       {
         level: 'warn',
-        correlation: args.correlation,
+        correlation: runtimeCorrelation,
       },
     );
 
