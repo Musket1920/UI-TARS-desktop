@@ -48,13 +48,20 @@ export const settingRoute = t.router({
   checkModelAvailability: t.procedure
     .input<VLMCheckInput>()
     .handle(async ({ input }) => {
-      const openai = new OpenAI(buildOpenAIConfig(input.baseUrl, input.apiKey));
-      const completion = await openai.chat.completions.create({
-        model: input.modelName,
-        messages: [{ role: 'user', content: 'return 1+1=?' }],
-        stream: false,
-      });
+      try {
+        const openai = new OpenAI(
+          buildOpenAIConfig(input.baseUrl, input.apiKey),
+        );
+        const completion = await openai.chat.completions.create({
+          model: input.modelName,
+          messages: [{ role: 'user', content: 'return 1+1=?' }],
+          stream: false,
+        });
 
-      return Boolean(completion?.id || completion.choices[0].message.content);
+        return Boolean(completion?.id || completion.choices[0].message.content);
+      } catch (e) {
+        logger.warn('[checkModelAvailability] failed:', e);
+        return false;
+      }
     }),
 });
