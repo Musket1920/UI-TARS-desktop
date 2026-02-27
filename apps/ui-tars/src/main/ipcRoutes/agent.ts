@@ -126,7 +126,7 @@ const buildHealthPresentation = (sidecarStatus: SidecarStatus) => {
     return {
       status: 'degraded' as const,
       message: 'Agent-S returned invalid output. Legacy fallback is active.',
-      reasonCode,
+      reasonCode: 'INVALID_OUTPUT',
       failureClass,
     };
   }

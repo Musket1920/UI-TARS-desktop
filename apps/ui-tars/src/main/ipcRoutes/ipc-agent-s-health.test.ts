@@ -292,6 +292,29 @@ describe('ipc-agent-s-health route payload', () => {
     });
   });
 
+  it('exposes literal INVALID_OUTPUT reasonCode when invalid output fallback occurs', async () => {
+    sidecarHealthMock.mockResolvedValue({
+      state: 'running',
+      mode: 'embedded',
+      healthy: false,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 4243,
+      checkedAt: 1700000003333,
+      lastHeartbeatAt: 1700000003333,
+      reason: 'AGENT_S_PREDICTION_MALFORMED',
+    });
+
+    const payload = await agentRoute.getAgentSHealth.handle({
+      input: undefined,
+      context: {} as GetAgentSHealthContext,
+    });
+
+    expect(payload.status).toBe('degraded');
+    expect(payload.failureClass).toBe('invalid_output');
+    expect(payload.reasonCode).toBe('INVALID_OUTPUT');
+    expect(payload.message).toContain('invalid output');
+  });
+
   it('returns runtime control status with safe control flags', async () => {
     sidecarHealthMock.mockResolvedValue({
       state: 'running',
