@@ -28,6 +28,7 @@ import { Operator } from '@main/store/types';
 import { useSetting } from '../../hooks/useSetting';
 
 type RunRequestPhase = 'idle' | 'submitting';
+type RunStatus = 'idle' | 'thinking' | 'executing';
 
 const ChatInput = ({
   operator,
@@ -153,9 +154,12 @@ const ChatInput = ({
   };
 
   const isCallUser = useMemo(() => status === StatusEnum.CALL_USER, [status]);
-  const runStatus = useMemo(() => {
-    if (running || runRequestPhase === 'submitting') {
-      return 'running';
+  const runStatus: RunStatus = useMemo(() => {
+    if (runRequestPhase === 'submitting') {
+      return 'thinking';
+    }
+    if (running) {
+      return 'executing';
     }
     return 'idle';
   }, [running, runRequestPhase]);
