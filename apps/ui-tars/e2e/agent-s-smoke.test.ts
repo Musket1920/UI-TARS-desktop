@@ -292,7 +292,7 @@ const runAgentFromInput = async (page: Page) => {
 
   await expect
     .poll(async () => runStatus.getAttribute('data-status'))
-    .toBe('running');
+    .toMatch(/^(thinking|executing)$/);
   await expect
     .poll(async () => runStatus.getAttribute('data-status'))
     .toBe('idle');
