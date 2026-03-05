@@ -9,8 +9,12 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   workers: 1,
+  reporter: process.env.CI
+    ? [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
+    : 'list',
   use: {
     trace: 'on-first-retry',
   },
+  outputDir: 'test-results',
   timeout: 60000,
 });
