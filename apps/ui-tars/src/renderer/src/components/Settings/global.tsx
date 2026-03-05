@@ -27,6 +27,7 @@ import { ChatSettings } from './category/chat';
 import { LocalBrowserSettings } from './category/localBrowser';
 import { ReportSettings } from './category/report';
 import { GeneralSettings } from './category/general';
+import { EngineSettings } from './category/engine';
 
 interface GlobalSettingsStore {
   isOpen: boolean;
@@ -77,6 +78,13 @@ export const GlobalSettings = () => {
                 Operator Settings
               </TabsTrigger>
               <TabsTrigger
+                value="engine"
+                className="w-full justify-start gap-2 px-2 py-1.5 mb-2 !shadow-none font-normal data-[state=active]:font-medium data-[state=active]:bg-accent data-[state=active]:text-accent-foreground hover:bg-accent/50"
+              >
+                <Sparkles strokeWidth={2} />
+                Engine Settings
+              </TabsTrigger>
+              <TabsTrigger
                 value="report"
                 className="w-full justify-start gap-2 px-2 py-1.5 mb-2 !shadow-none font-normal data-[state=active]:font-medium data-[state=active]:bg-accent data-[state=active]:text-accent-foreground hover:bg-accent/50"
               >
@@ -118,6 +126,14 @@ export const GlobalSettings = () => {
                   Local Browser Operator
                 </h3>
                 <LocalBrowserSettings />
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="engine" className="mt-0 flex-1">
+              <ScrollArea className="h-[calc(80vh-48px)]">
+                <h2 className="text-xl font-semibold mb-3">Engine Settings</h2>
+                <Separator className="mb-4" />
+                <EngineSettings />
               </ScrollArea>
             </TabsContent>
             <TabsContent value="report" className="mt-0">
