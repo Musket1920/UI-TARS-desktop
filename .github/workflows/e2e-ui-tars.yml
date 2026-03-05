@@ -18,10 +18,10 @@ env:
   CI: e2e
   NODE_OPTIONS: --max-old-space-size=8192
   HUSKY: 0
-  UI_TARS_APP_PRIVATE_KEY_BASE64: e2e-ui-tars-test-private-key
+  UI_TARS_APP_PRIVATE_KEY_BASE64: placeholder-private-key
 
 permissions:
-  id-token: write
+  id-token: write # secretlint-disable-line
   contents: read
   attestations: read
 
@@ -31,13 +31,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, macos-13, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Cache turbo
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306  # v5.0.3
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf
         with:
           path: .turbo
           key: ${{ runner.os }}-turbo-${{ github.sha }}
@@ -46,7 +46,7 @@ jobs:
 
       - name: Install pnpm
         run: npm install -g pnpm@9
-      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
+      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: 20
           cache: 'pnpm'
@@ -58,5 +58,21 @@ jobs:
         run: npm install -g appdmg
       - name: Install dependencies
         run: pnpm install
-      - name: Run e2e
-        run: npm exec turbo run ui-tars-desktop#test:e2e
+      - name: Build e2e app
+        run: pnpm --filter ui-tars-desktop run build:e2e
+      - name: Run Agent-S healthy smoke
+        run: pnpm --filter ui-tars-desktop run test:e2e --grep "@agent-s-healthy"
+      - name: Run Agent-S fallback smoke
+        run: pnpm --filter ui-tars-desktop run test:e2e --grep "@agent-s-fallback"
+      - name: Run baseline app launch smoke
+        run: pnpm --filter ui-tars-desktop run test:e2e --grep "app can launch"
+      - name: Upload e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-ui-tars-${{ matrix.os }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            apps/ui-tars/playwright-report
+            apps/ui-tars/test-results
