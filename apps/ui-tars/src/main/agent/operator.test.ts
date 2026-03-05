@@ -23,6 +23,16 @@ vi.mock('@main/env', () => ({
   isMacOS: false,
 }));
 
+vi.mock('@main/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    log: vi.fn(),
+  },
+}));
+
 describe('NutJSElectronOperator', () => {
   let operator: NutJSElectronOperator;
 
@@ -45,17 +55,18 @@ describe('NutJSElectronOperator', () => {
       const mockSource = {
         display_id: '1',
         thumbnail: {
-          toPNG: () => Buffer.from('mock-image'),
           resize: () => ({
-            toPNG: () => Buffer.from('mock-image'),
+            toJPEG: () => Buffer.from('mock-image'),
           }),
         },
       };
 
-      vi.mocked(screen.getPrimaryDisplay).mockReturnValue(mockDisplay as any);
+      vi.mocked(screen.getPrimaryDisplay).mockReturnValue(
+        mockDisplay as unknown as ReturnType<typeof screen.getPrimaryDisplay>,
+      );
       vi.mocked(desktopCapturer.getSources).mockResolvedValueOnce([
-        mockSource as any,
-      ]);
+        mockSource,
+      ] as unknown as Awaited<ReturnType<typeof desktopCapturer.getSources>>);
 
       const result = await operator.screenshot();
 

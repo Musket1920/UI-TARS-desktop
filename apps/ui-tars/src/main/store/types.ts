@@ -5,6 +5,15 @@
 import { GUIAgentData, Message } from '@ui-tars/shared/types';
 
 import { LocalStore, PresetSource } from './validate';
+export enum EngineMode {
+  UITARS = 'ui-tars',
+  AgentS = 'agent-s',
+}
+
+export enum AgentSSidecarMode {
+  Embedded = 'embedded',
+  Remote = 'remote',
+}
 import { ConversationWithSoM } from '@main/shared/types';
 
 export type NextAction =
@@ -32,6 +41,7 @@ export type AppState = {
   messages: ConversationWithSoM[];
   abortController: AbortController | null;
   thinking: boolean;
+  agentSPaused: boolean;
   browserAvailable: boolean;
 };
 
