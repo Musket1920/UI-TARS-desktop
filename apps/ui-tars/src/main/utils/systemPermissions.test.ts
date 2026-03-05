@@ -20,9 +20,23 @@ vi.mock('@computer-use/mac-screen-capture-permissions', () => ({
   openSystemPreferences: vi.fn(),
 }));
 
-vi.mock('@computer-use/node-mac-permissions');
+vi.mock('@computer-use/node-mac-permissions', () => ({
+  default: {
+    getAuthStatus: vi.fn(),
+    askForAccessibilityAccess: vi.fn(),
+    askForScreenCaptureAccess: vi.fn(),
+  },
+}));
 vi.mock('@main/env');
-vi.mock('@main/logger');
+vi.mock('@main/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    log: vi.fn(),
+  },
+}));
 
 (platform() === 'darwin' ? describe : describe.skip)(
   'systemPermissions',
