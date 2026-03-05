@@ -30,14 +30,6 @@ import {
 
 const hrefRegExp = /\/tag\/([^/]+)$/;
 
-const toErrorMessage = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.stack || error.message;
-  }
-
-  return String(error);
-};
-
 interface GithubUpdateInfo extends UpdateInfo {
   tag: string;
 }
@@ -140,9 +132,9 @@ export class CustomGitHubProvider extends BaseGitHubProvider<GithubUpdateInfo> {
           }
         }
       }
-    } catch (e: unknown) {
+    } catch (e: any) {
       throw newError(
-        `Cannot parse releases feed: ${toErrorMessage(e)},\nXML:\n${feedXml}`,
+        `Cannot parse releases feed: ${e.stack || e.message},\nXML:\n${feedXml}`,
         'ERR_UPDATER_INVALID_RELEASE_FEED',
       );
     }
@@ -156,7 +148,7 @@ export class CustomGitHubProvider extends BaseGitHubProvider<GithubUpdateInfo> {
 
     let rawData: string;
     let channelFile = '';
-    let channelFileUrl!: ReturnType<typeof newUrlFromBase>;
+    let channelFileUrl: any = '';
     const fetchData = async (channelName: string) => {
       channelFile = getChannelFilename(channelName);
       channelFileUrl = newUrlFromBase(
@@ -169,10 +161,10 @@ export class CustomGitHubProvider extends BaseGitHubProvider<GithubUpdateInfo> {
           requestOptions,
           cancellationToken,
         ))!;
-      } catch (e: unknown) {
+      } catch (e: any) {
         if (e instanceof HttpError && e.statusCode === 404) {
           throw newError(
-            `Cannot find ${channelFile} in the latest release artifacts (${channelFileUrl}): ${toErrorMessage(e)}`,
+            `Cannot find ${channelFile} in the latest release artifacts (${channelFileUrl}): ${e.stack || e.message}`,
             'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND',
           );
         }
@@ -188,7 +180,7 @@ export class CustomGitHubProvider extends BaseGitHubProvider<GithubUpdateInfo> {
         );
       }
       rawData = await fetchData(channel);
-    } catch (e: unknown) {
+    } catch (e: any) {
       if (this.updater.allowPrerelease) {
         // Allow fallback to `latest.yml`
         rawData = await fetchData(this.getDefaultChannelName());
@@ -219,7 +211,7 @@ export class CustomGitHubProvider extends BaseGitHubProvider<GithubUpdateInfo> {
             feed,
             latestRelease,
           );
-      } catch (e: unknown) {
+      } catch (e: any) {
         console.error('Error fetching release info', e);
         result.releaseName = tag;
         result.releaseNotes = '';
@@ -256,9 +248,9 @@ export class CustomGitHubProvider extends BaseGitHubProvider<GithubUpdateInfo> {
 
       const releaseInfo: GithubReleaseInfo = JSON.parse(rawData);
       return releaseInfo.tag_name;
-    } catch (e: unknown) {
+    } catch (e: any) {
       throw newError(
-        `Unable to find latest version on GitHub (${url}), please ensure a production release exists: ${toErrorMessage(e)}`,
+        `Unable to find latest version on GitHub (${url}), please ensure a production release exists: ${e.stack || e.message}`,
         'ERR_UPDATER_LATEST_VERSION_NOT_FOUND',
       );
     }
@@ -294,7 +286,7 @@ export function computeReleaseNotes(
   currentVersion: semver.SemVer,
   isFullChangelog: boolean,
   feed: XElement,
-  latestRelease: XElement,
+  latestRelease: any,
 ): string | Array<ReleaseNoteInfo> | null {
   if (!isFullChangelog) {
     return getNoteValue(latestRelease);
