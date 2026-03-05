@@ -5,17 +5,6 @@ import { connect } from 'puppeteer-core/lib/esm/puppeteer/puppeteer-core-browser
 import { RemoteResourceStatus } from '@renderer/hooks/useRemoteResource';
 import { StatusIndicator } from './status';
 
-const getModifiersForEvent = (
-  event: Pick<
-    MouseEvent | KeyboardEvent,
-    'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'
-  >,
-) =>
-  (event.altKey ? 1 : 0) |
-  (event.ctrlKey ? 2 : 0) |
-  (event.metaKey ? 4 : 0) |
-  (event.shiftKey ? 8 : 0);
-
 interface CDPBrowserProps {
   url?: string;
   status: RemoteResourceStatus;
@@ -31,35 +20,30 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
   onError,
   VLMError,
 }) => {
-  type CdpClient = {
-    send: (method: string, params?: unknown) => Promise<unknown>;
-    on: (event: string, listener: (...args: unknown[]) => void) => void;
-    off: (event: string) => void;
-  };
-  type CdpPageTarget = {
-    type: () => string;
-    page: () => Promise<Page | null>;
-  };
-  type CdpBrowser = {
-    on: (event: string, listener: (target: CdpPageTarget) => void) => void;
-    pages: () => Promise<Page[]>;
-    newPage: () => Promise<Page>;
-    disconnect: () => void;
-  };
-  const isConnected = status === 'connected';
+  if (status !== 'connected') {
+    return (
+      <StatusIndicator name={'Browser'} status={status} queueNum={queueNum} />
+    );
+  }
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<Page | null>(null);
-  const clientRef = useRef<CdpClient | null>(null);
-  const browserRef = useRef<CdpBrowser | null>(null);
+  const clientRef = useRef<any>(null);
+  const browserRef = useRef<any>(null);
   const [viewportSize, setViewportSize] = useState<{
     width: number;
     height: number;
   } | null>(null);
   const [isFocused, setIsFocused] = useState(false);
 
-  const handleInteraction = useCallback((event: MouseEvent | WheelEvent) => {
+  const getModifiersForEvent = (event: any) =>
+    (event.altKey ? 1 : 0) |
+    (event.ctrlKey ? 2 : 0) |
+    (event.metaKey ? 4 : 0) |
+    (event.shiftKey ? 8 : 0);
+
+  const handleInteraction = (event: MouseEvent | WheelEvent) => {
     if (!clientRef.current || !canvasRef.current) {
       return;
     }
@@ -83,12 +67,7 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
         })
         .catch(console.error);
     } else if (event instanceof MouseEvent) {
-      const buttons: Record<number, 'none' | 'left' | 'middle' | 'right'> = {
-        0: 'none',
-        1: 'left',
-        2: 'middle',
-        3: 'right',
-      };
+      const buttons = { 0: 'none', 1: 'left', 2: 'middle', 3: 'right' };
       const eventType = event.type;
       const mouseEventMap = {
         mousedown: 'mousePressed',
@@ -104,13 +83,13 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
           type,
           x,
           y,
-          button: buttons[event.which] ?? 'none',
+          button: (buttons as any)[event.which],
           modifiers: getModifiersForEvent(event),
           clickCount: 1,
         })
         .catch(console.error);
     }
-  }, []);
+  };
 
   const handleKeyEvent = useCallback(
     (event: KeyboardEvent) => {
@@ -133,8 +112,7 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
           type,
           text,
           unmodifiedText: text ? text.toLowerCase() : undefined,
-          keyIdentifier: (event as KeyboardEvent & { keyIdentifier?: string })
-            .keyIdentifier,
+          keyIdentifier: (event as any).keyIdentifier,
           code: event.code,
           key: event.key,
           windowsVirtualKeyCode: event.keyCode,
@@ -187,10 +165,6 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
 
   // resize hooks
   useEffect(() => {
-    if (!isConnected) {
-      return;
-    }
-
     const container = containerRef.current;
     if (!container || !canvasRef.current || !viewportSize) {
       return;
@@ -211,92 +185,89 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
     return () => {
       resizeObserver.unobserve(container);
     };
-  }, [isConnected, viewportSize, throttledUpdateCanvasSize]);
+  }, [viewportSize?.width, throttledUpdateCanvasSize]);
 
-  const initPuppeteer = useCallback(
-    async (endpoint: string) => {
-      let browser: CdpBrowser;
-      let client: CdpClient;
-      try {
-        browser = (await connect({
-          browserWSEndpoint: endpoint,
-          defaultViewport: {
-            width: 1280,
-            height: 800,
-            deviceScaleFactor: 0,
-            hasTouch: false,
-            isLandscape: true,
-            isMobile: false,
-          },
-        })) as unknown as CdpBrowser;
-        browserRef.current = browser;
+  const initPuppeteer = async (endpoint: string) => {
+    let browser: any;
+    let client: any;
+    try {
+      browser = await connect({
+        browserWSEndpoint: endpoint,
+        defaultViewport: {
+          width: 1280,
+          height: 800,
+          deviceScaleFactor: 0,
+          hasTouch: false,
+          isLandscape: true,
+          isMobile: false,
+        },
+      });
+      browserRef.current = browser;
 
-        const setupPageScreencast = async (page: Page, from: string) => {
-          if (!page || !containerRef.current) {
-            return;
-          }
-          pageRef.current = page;
-          console.log('setupPageScreencast page', page);
+      const setupPageScreencast = async (page: Page, from: string) => {
+        if (!page || !containerRef.current) {
+          return;
+        }
+        pageRef.current = page;
+        console.log('setupPageScreencast page', page);
 
-          const url = page.url();
-          console.log('page url', from, url);
+        const url = page.url();
+        console.log('page url', from, url);
 
-          await page.setViewport({
-            width: 1280,
-            height: 800,
-            deviceScaleFactor: 0,
-            hasTouch: false,
-            isLandscape: true,
-            isMobile: false,
-          });
-          const viewport = await page.viewport();
+        await page.setViewport({
+          width: 1280,
+          height: 800,
+          deviceScaleFactor: 0,
+          hasTouch: false,
+          isLandscape: true,
+          isMobile: false,
+        });
+        const viewport = await page.viewport();
 
-          if (!viewport) {
-            return;
-          }
+        if (!viewport) {
+          return;
+        }
+        setViewportSize({ width: viewport.width, height: viewport.height });
+
+        if (!containerRef.current) {
+          return;
+        }
+        const containerRect = containerRef.current.getBoundingClientRect();
+        if (containerRect.width <= 0 || containerRect.height <= 0) {
           setViewportSize({ width: viewport.width, height: viewport.height });
+          return;
+        }
 
-          if (!containerRef.current) {
-            return;
-          }
-          const containerRect = containerRef.current.getBoundingClientRect();
-          if (containerRect.width <= 0 || containerRect.height <= 0) {
-            setViewportSize({ width: viewport.width, height: viewport.height });
-            return;
-          }
+        clientRef.current?.off('Page.screencastFrame');
+        await clientRef.current?.send('Page.stopScreencast').catch(() => {});
+        try {
+          client = await page.createCDPSession();
+        } catch (cdpError) {
+          return;
+        }
+        clientRef.current = client;
 
-          clientRef.current?.off('Page.screencastFrame');
-          await clientRef.current?.send('Page.stopScreencast').catch(() => {});
-          try {
-            client = (await page.createCDPSession()) as unknown as CdpClient;
-          } catch (cdpError) {
-            return;
-          }
-          clientRef.current = client;
+        console.log('setupPageScreencast clientRef', client);
 
-          console.log('setupPageScreencast clientRef', client);
-
-          throttledUpdateCanvasSize(
-            containerRect.width,
-            containerRect.height,
-            viewport.width,
-            viewport.height,
-          );
-          try {
-            await client.send('Page.startScreencast', {
-              format: 'jpeg',
-              quality: 80,
-              everyNthFrame: 1,
-            });
-          } catch (screencastError) {
-            console.error('screencastError', screencastError);
-            return;
-          }
-          client.on('Page.screencastFrame', (framePayload) => {
-            const { data, sessionId } = framePayload as {
-              data: string;
-              sessionId: number;
-            };
+        throttledUpdateCanvasSize(
+          containerRect.width,
+          containerRect.height,
+          viewport.width,
+          viewport.height,
+        );
+        try {
+          await client.send('Page.startScreencast', {
+            format: 'jpeg',
+            quality: 80,
+            everyNthFrame: 1,
+          });
+        } catch (screencastError) {
+          console.error('screencastError', screencastError);
+          return;
+        }
+        client.on(
+          'Page.screencastFrame',
+          ({ data, sessionId }: { data: string; sessionId: number }) => {
             if (canvasRef.current) {
               const img = new Image();
               img.onload = () => {
@@ -327,75 +298,90 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
                 .send('Page.screencastFrameAck', { sessionId })
                 .catch(console.error);
             }
-          });
-          client.on('error', (err: unknown) => {
-            console.error('client.on', err);
-          });
-          client.on('disconnect', () => {});
-        };
-
-        const handleTarget = async (target: CdpPageTarget) => {
-          if (target.type() !== 'page') {
-            return;
-          }
-
-          try {
-            const newPage = (await target.page()) as Page;
-
-            console.log('newPage url', newPage.url());
-
-            if (newPage && newPage !== pageRef.current) {
-              if (clientRef.current) {
-                await clientRef.current
-                  .send('Page.stopScreencast')
-                  .catch(console.error);
-                clientRef.current.off('Page.screencastFrame');
-              }
-              await setupPageScreencast(newPage, 'handleTarget');
-            }
-          } catch (error) {
-            console.error('Failed to setup page screencast:', error);
-            if (onError) {
-              onError(error instanceof Error ? error.message : String(error));
-            }
-          }
-        };
-
-        browser.on('targetchanged', handleTarget);
-        browser.on('targetcreated', handleTarget);
-
-        const pages = await browser.pages();
-        const page =
-          pages.length > 0 ? pages[pages.length - 1] : await browser.newPage();
-
-        pages.forEach((element) => {
-          console.log('pages element url', element.url());
+          },
+        );
+        client.on('error', (err: any) => {
+          console.error('client.on', err);
         });
+        client.on('disconnect', () => {});
+      };
 
-        page.goto('https://www.toutiao.com/');
-
-        await setupPageScreencast(page, 'init');
-      } catch (error) {
-        if (onError) {
-          onError(error instanceof Error ? error.message : String(error));
+      const handleTarget = async (target: any) => {
+        if (target.type() !== 'page') {
+          return;
         }
+
+        try {
+          const newPage = (await target.page()) as Page;
+
+          console.log('newPage url', newPage.url());
+
+          if (newPage && newPage !== pageRef.current) {
+            if (clientRef.current) {
+              await clientRef.current
+                .send('Page.stopScreencast')
+                .catch(console.error);
+              clientRef.current.off('Page.screencastFrame');
+            }
+            await setupPageScreencast(newPage, 'handleTarget');
+          }
+        } catch (error) {
+          console.error('Failed to setup page screencast:', error);
+          if (onError) {
+            onError(error instanceof Error ? error.message : String(error));
+          }
+        }
+      };
+
+      browser.on('targetchanged', handleTarget);
+      browser.on('targetcreated', handleTarget);
+
+      const pages = await browser.pages();
+      const page =
+        pages.length > 0 ? pages[pages.length - 1] : await browser.newPage();
+
+      pages.forEach((element) => {
+        console.log('pages element url', element.url());
+      });
+
+      page.goto('https://www.toutiao.com/');
+
+      await setupPageScreencast(page, 'init');
+    } catch (error) {
+      if (onError) {
+        onError(error instanceof Error ? error.message : String(error));
       }
-    },
-    [onError, throttledUpdateCanvasSize],
-  );
+    }
+  };
+
+  const initCDPConnection = async (endpoint: string) => {
+    try {
+      await initPuppeteer(endpoint);
+
+      if (pageRef.current) {
+        await pageRef.current.setViewport({
+          width: 1280,
+          height: 800,
+          deviceScaleFactor: 0,
+          hasTouch: false,
+          isLandscape: true,
+          isMobile: false,
+        });
+      }
+    } catch (error) {
+      if (onError) {
+        onError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  };
 
   useEffect(() => {
-    if (!isConnected) {
-      return;
-    }
-
-    const browser = browserRef.current;
-    if (!VLMError || !browser) {
+    if (!VLMError || !browserRef.current) {
       return;
     }
 
     const fallbackToToutiao = async () => {
-      const pages = await browser.pages();
+      const pages = await browserRef.current.pages();
 
       pages.forEach((page) => {
         page.goto('https://www.toutiao.com/');
@@ -403,33 +389,16 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
     };
 
     fallbackToToutiao();
-  }, [VLMError, isConnected]);
+  }, [VLMError]);
 
   // init cdp
   useEffect(() => {
-    if (!isConnected || !url) {
+    if (!url) {
       return;
     }
     // ws endpoint
     const init = async () => {
-      try {
-        await initPuppeteer(url);
-
-        if (pageRef.current) {
-          await pageRef.current.setViewport({
-            width: 1280,
-            height: 800,
-            deviceScaleFactor: 0,
-            hasTouch: false,
-            isLandscape: true,
-            isMobile: false,
-          });
-        }
-      } catch (error) {
-        if (onError) {
-          onError(error instanceof Error ? error.message : String(error));
-        }
-      }
+      await initCDPConnection(url);
     };
     init();
 
@@ -438,14 +407,10 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
       pageRef.current?.close().catch(() => {});
       browserRef.current?.disconnect();
     };
-  }, [url, isConnected, initPuppeteer, onError]);
+  }, [url]);
 
   // event listener
   useEffect(() => {
-    if (!isConnected) {
-      return;
-    }
-
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
@@ -473,13 +438,7 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
       canvas.removeEventListener('keyup', handleKeyEvent);
       canvas.removeEventListener('keypress', handleKeyEvent);
     };
-  }, [handleKeyEvent, handleInteraction, isConnected]);
-
-  if (!isConnected) {
-    return (
-      <StatusIndicator name={'Browser'} status={status} queueNum={queueNum} />
-    );
-  }
+  }, [handleKeyEvent]);
 
   return (
     <div
@@ -491,7 +450,7 @@ export const CDPBrowser: React.FC<CDPBrowserProps> = ({
         className="block w-full h-full bg-white focus:outline-none"
         width={viewportSize?.width || 1280}
         height={viewportSize?.height || 800}
-        tabIndex={0}
+        tabIndex={99}
         onClick={(e) => {
           e.preventDefault();
           if (canvasRef.current) {
