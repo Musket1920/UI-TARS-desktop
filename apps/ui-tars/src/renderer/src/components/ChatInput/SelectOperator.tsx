@@ -93,6 +93,7 @@ export const SelectOperator = () => {
       setHealth(healthPayload);
       setRuntimeStatus(runtimePayload);
     } catch (error) {
+      console.error('Failed to poll Agent-S status', error);
       setHealth(null);
       setRuntimeStatus(null);
     } finally {

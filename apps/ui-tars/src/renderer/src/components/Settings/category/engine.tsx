@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import * as z from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -33,7 +33,11 @@ import { Separator } from '@renderer/components/ui/separator';
 import { cn } from '@renderer/utils';
 import { useSetting } from '@renderer/hooks/useSetting';
 import { api } from '@renderer/api';
-import { AgentSSidecarMode, EngineMode } from '@main/store/types';
+import {
+  AgentSSidecarMode,
+  EngineMode,
+  type LocalStore,
+} from '@main/store/types';
 import { Loader2, RefreshCcw, ShieldCheck, ShieldOff } from 'lucide-react';
 
 type AgentSHealthPayload = Awaited<ReturnType<typeof api.getAgentSHealth>>;
@@ -48,16 +52,11 @@ const formSchema = z.object({
     .union([z.string().url({ message: 'Enter a valid URL' }), z.literal('')])
     .optional(),
   agentSSidecarPort: z
-    .union([
-      z.literal(''),
-      z
-        .string()
-        .regex(/^\d+$/, { message: 'Port must be a number' })
-        .transform((val) => Number(val))
-        .refine((val) => val >= 1 && val <= 65535, {
-          message: 'Port must be between 1 and 65535',
-        }),
-    ])
+    .string()
+    .regex(/^\d*$/, { message: 'Port must be a number' })
+    .refine((val) => val === '' || (Number(val) >= 1 && Number(val) <= 65535), {
+      message: 'Port must be between 1 and 65535',
+    })
     .optional(),
 });
 
@@ -78,8 +77,21 @@ const STATUS_COPY: Record<AgentSHealthPayload['status'], string> = {
   offline: 'Sidecar is offline',
 };
 
+const toSidecarPortInputValue = (
+  port: LocalStore['agentSSidecarPort'],
+): NonNullable<FormValues['agentSSidecarPort']> => {
+  return port === undefined ? '' : String(port);
+};
+
+const toPersistedSidecarPort = (
+  port: FormValues['agentSSidecarPort'],
+): LocalStore['agentSSidecarPort'] => {
+  return port === undefined || port === '' ? undefined : Number(port);
+};
+
 export function EngineSettings({ className }: { className?: string }) {
   const { settings, updateSetting } = useSetting();
+  const latestSettingsRef = useRef(settings);
   const [health, setHealth] = useState<AgentSHealthPayload | null>(null);
   const [runtimeStatus, setRuntimeStatus] =
     useState<AgentRuntimeStatusPayload | null>(null);
@@ -104,13 +116,30 @@ export function EngineSettings({ className }: { className?: string }) {
     ]);
 
   useEffect(() => {
+    latestSettingsRef.current = settings;
+  }, [settings]);
+
+  const persistSettingsDelta = useCallback(
+    (delta: Partial<LocalStore>) => {
+      const nextSettings = {
+        ...latestSettingsRef.current,
+        ...delta,
+      };
+
+      latestSettingsRef.current = nextSettings;
+      updateSetting(nextSettings);
+    },
+    [updateSetting],
+  );
+
+  useEffect(() => {
     if (Object.keys(settings).length) {
       form.reset({
         engineMode: settings.engineMode ?? EngineMode.UITARS,
         agentSSidecarMode:
           settings.agentSSidecarMode ?? AgentSSidecarMode.Embedded,
         agentSSidecarUrl: settings.agentSSidecarUrl ?? '',
-        agentSSidecarPort: settings.agentSSidecarPort ?? '',
+        agentSSidecarPort: toSidecarPortInputValue(settings.agentSSidecarPort),
       });
     }
   }, [settings, form]);
@@ -121,42 +150,48 @@ export function EngineSettings({ className }: { className?: string }) {
     }
 
     const persist = async () => {
-      if (newEngineMode && newEngineMode !== settings.engineMode) {
-        updateSetting({ ...settings, engineMode: newEngineMode });
+      if (
+        newEngineMode &&
+        newEngineMode !== latestSettingsRef.current.engineMode
+      ) {
+        persistSettingsDelta({ engineMode: newEngineMode });
       }
 
-      if (newSidecarMode && newSidecarMode !== settings.agentSSidecarMode) {
-        updateSetting({ ...settings, agentSSidecarMode: newSidecarMode });
+      if (
+        newSidecarMode &&
+        newSidecarMode !== latestSettingsRef.current.agentSSidecarMode
+      ) {
+        persistSettingsDelta({ agentSSidecarMode: newSidecarMode });
       }
 
       if (newSidecarUrl !== undefined) {
+        const pendingSidecarUrl = newSidecarUrl;
         const isUrlValid = await form.trigger('agentSSidecarUrl');
-        if (isUrlValid && newSidecarUrl !== settings.agentSSidecarUrl) {
-          updateSetting({
-            ...settings,
-            agentSSidecarUrl:
-              newSidecarUrl === '' ? undefined : newSidecarUrl.trim(),
-          });
+        const latestSidecarUrl = form.getValues('agentSSidecarUrl');
+
+        if (isUrlValid && latestSidecarUrl === pendingSidecarUrl) {
+          const normalizedSidecarUrl =
+            pendingSidecarUrl === '' ? undefined : pendingSidecarUrl.trim();
+
+          if (
+            normalizedSidecarUrl !== latestSettingsRef.current.agentSSidecarUrl
+          ) {
+            persistSettingsDelta({ agentSSidecarUrl: normalizedSidecarUrl });
+          }
         }
       }
 
       if (newSidecarPort !== undefined) {
+        const pendingSidecarPort = newSidecarPort;
         const isPortValid = await form.trigger('agentSSidecarPort');
-        if (
-          isPortValid &&
-          newSidecarPort !== String(settings.agentSSidecarPort ?? '')
-        ) {
-          const normalizedPort =
-            typeof newSidecarPort === 'number'
-              ? newSidecarPort
-              : newSidecarPort === ''
-                ? undefined
-                : Number(newSidecarPort);
+        const latestSidecarPort = form.getValues('agentSSidecarPort');
 
-          updateSetting({
-            ...settings,
-            agentSSidecarPort: normalizedPort,
-          });
+        if (isPortValid && latestSidecarPort === pendingSidecarPort) {
+          const normalizedPort = toPersistedSidecarPort(pendingSidecarPort);
+
+          if (normalizedPort !== latestSettingsRef.current.agentSSidecarPort) {
+            persistSettingsDelta({ agentSSidecarPort: normalizedPort });
+          }
         }
       }
     };
@@ -168,7 +203,7 @@ export function EngineSettings({ className }: { className?: string }) {
     newSidecarUrl,
     newSidecarPort,
     settings,
-    updateSetting,
+    persistSettingsDelta,
     form,
   ]);
 
@@ -312,6 +347,7 @@ export function EngineSettings({ className }: { className?: string }) {
                           className="bg-white"
                           placeholder="54321"
                           {...field}
+                          value={field.value ?? ''}
                         />
                       </FormControl>
                       <FormMessage />
