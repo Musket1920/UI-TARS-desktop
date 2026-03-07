@@ -1,0 +1,1 @@
+- 2026-03-06: `AgentSSidecarManager` now fail-closes embedded startup before `spawn()` unless the launcher is exactly `agent_s` or `python`/`python3` with args starting `-m agent_s`, while still preserving existing `--enable_local_env` stripping.

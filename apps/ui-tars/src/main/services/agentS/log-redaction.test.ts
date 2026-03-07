@@ -123,6 +123,7 @@ describe('log-redaction', () => {
       event: 'agent_s.runtime.error',
       runId: 'run-1',
       sessionId: 'session-1',
+      turnId: null,
       payload: {
         ...keyValue(AUTHORIZATION_FIELD, 'Be***23'),
         reasonCode: 'startup_timeout',

@@ -340,6 +340,154 @@ describe('sidecar-manager', () => {
     expect(options).toMatchObject({ windowsHide: true });
   });
 
+  it('allows direct agent_s launcher in embedded mode', async () => {
+    const child = new MockChildProcess(10001);
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ healthy: true }),
+    } as Response);
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const status = await manager.start({
+      mode: 'embedded',
+      command: 'agent_s',
+      args: ['--port', '10800'],
+      endpoint: 'http://127.0.0.1:9510',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+
+    expect(status.state).toBe('running');
+    expect(status.healthy).toBe(true);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const spawnCall = spawnMock.mock.calls[0];
+    expect(spawnCall).toBeDefined();
+
+    const [command, args] = spawnCall!;
+    expect(command).toBe('agent_s');
+    expect(args).toEqual(['--port', '10800']);
+  });
+
+  it.each([
+    {
+      name: 'python -m agent_s',
+      command: 'python',
+      args: ['-m', 'agent_s', '--port', '10800'],
+    },
+    {
+      name: 'python3 -m agent_s',
+      command: 'python3',
+      args: ['-m', 'agent_s', '--port', '10801'],
+    },
+  ])('allows embedded launcher %s', async ({ command, args }) => {
+    const child = new MockChildProcess(10002);
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ healthy: true }),
+    } as Response);
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const status = await manager.start({
+      mode: 'embedded',
+      command,
+      args,
+      endpoint: 'http://127.0.0.1:9511',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+
+    expect(status.state).toBe('running');
+    expect(status.healthy).toBe(true);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const spawnCall = spawnMock.mock.calls[0];
+    expect(spawnCall).toBeDefined();
+
+    const [spawnedCommand, spawnedArgs] = spawnCall!;
+    expect(spawnedCommand).toBe(command);
+    expect(spawnedArgs).toEqual(args);
+  });
+
+  it.each([
+    {
+      name: 'bash binary',
+      command: 'bash',
+      args: ['-lc', 'agent_s'],
+    },
+    {
+      name: 'cmd binary',
+      command: 'cmd',
+      args: ['/c', 'agent_s'],
+    },
+    {
+      name: 'python without -m agent_s',
+      command: 'python',
+      args: ['script.py'],
+    },
+    {
+      name: 'python with different module',
+      command: 'python3',
+      args: ['-m', 'pip'],
+    },
+    {
+      name: 'path-based launcher',
+      command: './agent_s',
+      args: [],
+    },
+  ])(
+    'fails closed before spawn for denied embedded launcher: %s',
+    async ({ command, args }) => {
+      const spawnMock = vi.fn<SpawnFunction>();
+      const fetchMock = vi.fn<typeof fetch>();
+
+      const manager = new AgentSSidecarManager({
+        spawn: spawnMock as SpawnFunction,
+        fetch: fetchMock,
+        now: () => Date.now(),
+      });
+
+      const status = await manager.start({
+        mode: 'embedded',
+        command,
+        args,
+        endpoint: 'http://127.0.0.1:9512',
+        startupTimeoutMs: 1_000,
+        startupPollIntervalMs: 100,
+        heartbeatIntervalMs: 500,
+        healthTimeoutMs: 300,
+      });
+
+      expect(status.state).toBe('unhealthy');
+      expect(status.healthy).toBe(false);
+      expect(status.reason).toBe('startup_failed');
+      expect(status.pid).toBeNull();
+      expect(status.error).toContain('agent_s');
+      expect(spawnMock).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
   it('treats explicit healthy payload marker as healthy', async () => {
     const child = new MockChildProcess(1234);
     const spawnMock = vi.fn<SpawnFunction>(

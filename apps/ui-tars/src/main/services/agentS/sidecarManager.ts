@@ -162,6 +162,8 @@ const DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MS = 20_000;
 const MIN_TIMEOUT_MS = 50;
 const MIN_INTERVAL_MS = 100;
 const MIN_FAILURE_THRESHOLD = 1;
+const EMBEDDED_LAUNCHER_NAME_PATTERN = /^[a-z0-9_.-]+$/i;
+const ALLOWED_EMBEDDED_LAUNCHERS = new Set(['agent_s', 'python', 'python3']);
 
 const stripUnsafeLocalEnvArgs = (args: string[] = []): string[] => {
   return args.filter((arg) => {
@@ -171,6 +173,32 @@ const stripUnsafeLocalEnvArgs = (args: string[] = []): string[] => {
       !normalized.startsWith('--enable_local_env=')
     );
   });
+};
+
+const validateEmbeddedLauncher = (
+  command: string,
+  args: string[] = [],
+): string | null => {
+  const normalizedCommand = command.trim().toLowerCase();
+  if (
+    normalizedCommand.length === 0 ||
+    !EMBEDDED_LAUNCHER_NAME_PATTERN.test(normalizedCommand) ||
+    !ALLOWED_EMBEDDED_LAUNCHERS.has(normalizedCommand)
+  ) {
+    return 'Embedded sidecar command must be agent_s, python -m agent_s, or python3 -m agent_s';
+  }
+
+  if (normalizedCommand === 'agent_s') {
+    return null;
+  }
+
+  const moduleFlag = args[0]?.trim();
+  const moduleName = args[1]?.trim().toLowerCase();
+  if (moduleFlag !== '-m' || moduleName !== 'agent_s') {
+    return 'Embedded Python sidecar command must launch agent_s via -m agent_s';
+  }
+
+  return null;
 };
 
 const normalizeTimeout = (value: number | undefined, fallback: number) => {
@@ -687,6 +715,30 @@ export class AgentSSidecarManager {
     });
 
     if (config.mode === 'embedded') {
+      const launcherValidationError = validateEmbeddedLauncher(
+        config.command,
+        safeEmbeddedArgs ?? [],
+      );
+      if (launcherValidationError) {
+        emitAgentSTelemetry(
+          'agent_s.runtime.error',
+          {
+            source: 'sidecar.spawn_validation',
+            mode: config.mode,
+            error: launcherValidationError,
+          },
+          { level: 'error', correlation: this.telemetryCorrelation },
+        );
+        this.updateStatus({
+          state: 'unhealthy',
+          healthy: false,
+          reason: 'startup_failed',
+          error: launcherValidationError,
+          checkedAt: this.deps.now(),
+        });
+        return this.getStatus();
+      }
+
       try {
         this.child = this.deps.spawn(config.command, safeEmbeddedArgs ?? [], {
           cwd: config.cwd,

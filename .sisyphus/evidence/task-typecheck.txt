@@ -1,0 +1,5 @@
+Task: typecheck
+
+Command: set CI=true&& pnpm --filter ui-tars-desktop typecheck
+Status: PASS
+Evidence: Typecheck passed in this worktree.

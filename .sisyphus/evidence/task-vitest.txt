@@ -1,0 +1,5 @@
+Task: full-non-watch-vitest
+
+Command: pnpm --filter ui-tars-desktop exec vitest run
+Status: PASS
+Evidence: Full non-watch Vitest run passed in this worktree.
