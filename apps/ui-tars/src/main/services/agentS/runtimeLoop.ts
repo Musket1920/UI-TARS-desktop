@@ -160,21 +160,17 @@ const normalizeMaxSteps = (settings: LocalStore): number => {
   );
 };
 
-const normalizeTurnTimeoutMs = (settings: LocalStore): number => {
-  if (
-    typeof settings.loopIntervalInMs !== 'number' ||
-    !Number.isFinite(settings.loopIntervalInMs)
-  ) {
-    return AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS;
+export const normalizeTurnTimeoutMs = (settings: LocalStore): number => {
+  const timeoutValue = settings.agentSTurnTimeoutMs;
+
+  if (typeof timeoutValue === 'number' && Number.isFinite(timeoutValue)) {
+    return Math.min(
+      AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+      Math.max(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS, Math.floor(timeoutValue)),
+    );
   }
 
-  return Math.min(
-    AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
-    Math.max(
-      AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
-      Math.floor(settings.loopIntervalInMs),
-    ),
-  );
+  return AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS;
 };
 
 const readImageSize = async (
