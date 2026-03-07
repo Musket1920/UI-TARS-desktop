@@ -32,10 +32,9 @@ import { registerSettingsHandlers } from './services/settings';
 import { sanitizeState } from './utils/sanitizeState';
 import { windowManager } from './services/windowManager';
 import { checkBrowserAvailability } from './services/browserCheck';
+import { resolveSidecarEndpoint } from './utils/resolveSidecarEndpoint';
 
 const { isProd } = env;
-const DEFAULT_AGENT_S_PORT = 10800;
-const DEFAULT_AGENT_S_ENDPOINT = `http://127.0.0.1:${DEFAULT_AGENT_S_PORT}`;
 
 let hasHandledBeforeQuit = false;
 
@@ -50,35 +49,9 @@ const parseSidecarArgs = (rawArgs: string | undefined): string[] => {
     .filter(Boolean);
 };
 
-const resolveSidecarEndpoint = (
-  rawUrl: string | undefined,
-  rawPort: number | undefined,
+const startAgentSSidecarIfNeeded = async (
+  settings = SettingStore.getStore(),
 ) => {
-  const fallbackPort =
-    typeof rawPort === 'number' && Number.isFinite(rawPort) && rawPort > 0
-      ? rawPort
-      : DEFAULT_AGENT_S_PORT;
-
-  if (!rawUrl) {
-    return `http://127.0.0.1:${fallbackPort}`;
-  }
-
-  try {
-    const target = new URL(rawUrl);
-
-    if (!target.port && fallbackPort > 0) {
-      target.port = String(fallbackPort);
-    }
-
-    return target.toString().replace(/\/$/, '');
-  } catch {
-    return DEFAULT_AGENT_S_ENDPOINT;
-  }
-};
-
-const startAgentSSidecarIfNeeded = async () => {
-  const settings = SettingStore.getStore();
-
   if (settings.engineMode !== EngineMode.AgentS) {
     const status = await agentSSidecarManager.stop();
     logger.info(
@@ -328,8 +301,8 @@ const registerIPCHandlers = (
     await UTIOService.getInstance().shareReport(params);
   });
 
-  registerSettingsHandlers(async () => {
-    await startAgentSSidecarIfNeeded();
+  registerSettingsHandlers(async (settings) => {
+    await startAgentSSidecarIfNeeded(settings);
   });
   // register ipc services routes
   registerIpcMain(ipcRoutes);
