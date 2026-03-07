@@ -22,6 +22,30 @@ type SpawnFunction = NonNullable<
   NonNullable<ConstructorParameters<typeof AgentSSidecarManager>[0]>['spawn']
 >;
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
+
+const createDeferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+};
+
+const createHealthyResponse = (payload: unknown = { healthy: true }) =>
+  ({
+    ok: true,
+    status: 200,
+    json: async () => payload,
+  }) as Response;
+
 class MockChildProcess extends EventEmitter {
   pid: number;
   exitCode: number | null = null;
@@ -295,6 +319,188 @@ describe('sidecar-manager', () => {
     expect(restarted.state).toBe('running');
     expect(restarted.pid).toBe(2222);
     expect(restarted.endpoint).toBe('http://127.0.0.1:9401');
+  });
+
+  it('latest overlapping start request wins over an in-flight startup', async () => {
+    const firstChild = new MockChildProcess(7001);
+    const secondChild = new MockChildProcess(7002);
+    const firstProbe = createDeferred<Response>();
+    const spawnMock = vi
+      .fn<SpawnFunction>()
+      .mockReturnValueOnce(firstChild as unknown as ReturnType<SpawnFunction>)
+      .mockReturnValueOnce(secondChild as unknown as ReturnType<SpawnFunction>);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => firstProbe.promise)
+      .mockResolvedValueOnce(createHealthyResponse());
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const firstStart = manager.start({
+      mode: 'embedded',
+      command: 'python',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9700',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 1_000,
+      healthTimeoutMs: 300,
+    });
+
+    const secondStart = manager.start({
+      mode: 'embedded',
+      command: 'python3',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9701',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 1_000,
+      healthTimeoutMs: 300,
+    });
+
+    expect(secondStart).not.toBe(firstStart);
+
+    const latestStatus = await secondStart;
+    expect(firstChild.killed).toBe(true);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(spawnMock.mock.calls[0]?.[0]).toBe('python');
+    expect(spawnMock.mock.calls[1]?.[0]).toBe('python3');
+    expect(latestStatus.state).toBe('running');
+    expect(latestStatus.endpoint).toBe('http://127.0.0.1:9701');
+    expect(latestStatus.pid).toBe(7002);
+
+    firstProbe.resolve(createHealthyResponse());
+    const staleStatus = await firstStart;
+
+    expect(staleStatus.state).toBe('running');
+    expect(staleStatus.endpoint).toBe('http://127.0.0.1:9701');
+    expect(staleStatus.pid).toBe(7002);
+    expect(manager.getStatus().endpoint).toBe('http://127.0.0.1:9701');
+  });
+
+  it('stop during startup followed by new start does not reuse stale startup result', async () => {
+    const firstChild = new MockChildProcess(7101);
+    const secondChild = new MockChildProcess(7102);
+    const firstProbe = createDeferred<Response>();
+    const spawnMock = vi
+      .fn<SpawnFunction>()
+      .mockReturnValueOnce(firstChild as unknown as ReturnType<SpawnFunction>)
+      .mockReturnValueOnce(secondChild as unknown as ReturnType<SpawnFunction>);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => firstProbe.promise)
+      .mockResolvedValueOnce(createHealthyResponse());
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const firstStart = manager.start({
+      mode: 'embedded',
+      command: 'python',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9710',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 1_000,
+      healthTimeoutMs: 300,
+    });
+
+    const stopped = await manager.stop();
+    expect(stopped.state).toBe('stopped');
+    expect(stopped.reason).toBe('stop_requested');
+    expect(firstChild.killed).toBe(true);
+
+    const restarted = await manager.start({
+      mode: 'embedded',
+      command: 'python3',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9711',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 1_000,
+      healthTimeoutMs: 300,
+    });
+
+    expect(restarted.state).toBe('running');
+    expect(restarted.endpoint).toBe('http://127.0.0.1:9711');
+    expect(restarted.pid).toBe(7102);
+
+    firstProbe.resolve(createHealthyResponse());
+    const staleStatus = await firstStart;
+
+    expect(staleStatus.state).toBe('running');
+    expect(staleStatus.endpoint).toBe('http://127.0.0.1:9711');
+    expect(manager.getStatus().endpoint).toBe('http://127.0.0.1:9711');
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('applies the latest config to status and health probes after overlapping starts', async () => {
+    const firstChild = new MockChildProcess(7201);
+    const secondChild = new MockChildProcess(7202);
+    const firstProbe = createDeferred<Response>();
+    const spawnMock = vi
+      .fn<SpawnFunction>()
+      .mockReturnValueOnce(firstChild as unknown as ReturnType<SpawnFunction>)
+      .mockReturnValueOnce(secondChild as unknown as ReturnType<SpawnFunction>);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => firstProbe.promise)
+      .mockResolvedValueOnce(createHealthyResponse())
+      .mockResolvedValueOnce(createHealthyResponse({ status: 'running' }));
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const firstStart = manager.start({
+      mode: 'embedded',
+      command: 'python',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9720',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 1_000,
+      healthTimeoutMs: 300,
+    });
+
+    const latestStatus = await manager.start({
+      mode: 'embedded',
+      command: 'python3',
+      args: ['-m', 'agent_s', '--port', '10801'],
+      endpoint: 'http://127.0.0.1:9721/base',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 1_000,
+      healthTimeoutMs: 300,
+    });
+
+    firstProbe.resolve(createHealthyResponse());
+    await firstStart;
+
+    const probed = await manager.health({ probe: true });
+
+    expect(latestStatus.endpoint).toBe('http://127.0.0.1:9721/base');
+    expect(probed.endpoint).toBe('http://127.0.0.1:9721/base');
+    expect(probed.pid).toBe(7202);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'http://127.0.0.1:9721/base/health',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'http://127.0.0.1:9721/base/health',
+      expect.objectContaining({ method: 'GET' }),
+    );
   });
 
   it('strips --enable_local_env from embedded sidecar args before spawn', async () => {

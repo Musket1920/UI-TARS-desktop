@@ -556,15 +556,14 @@ export class AgentSSidecarManager {
   }
 
   async start(config: SidecarStartConfig): Promise<SidecarStatus> {
-    if (this.startPromise) {
-      return this.startPromise;
-    }
+    const startPromise = this.startInternal(config);
+    this.startPromise = startPromise;
 
-    this.startPromise = this.startInternal(config).finally(() => {
-      this.startPromise = null;
+    return startPromise.finally(() => {
+      if (this.startPromise === startPromise) {
+        this.startPromise = null;
+      }
     });
-
-    return this.startPromise;
   }
 
   async restart(config?: SidecarStartConfig): Promise<SidecarStatus> {
@@ -679,6 +678,10 @@ export class AgentSSidecarManager {
           DEFAULT_SHUTDOWN_TIMEOUT_MS,
         ),
       );
+    }
+
+    if (lifecycleMarker !== this.lifecycleToken) {
+      return this.getStatus();
     }
 
     this.currentConfig = { ...config };
@@ -812,6 +815,10 @@ export class AgentSSidecarManager {
       }
 
       const probe = await this.probeHealth(config);
+      if (lifecycleMarker !== this.lifecycleToken) {
+        return this.getStatus();
+      }
+
       if (probe.healthy) {
         this.updateStatus({
           state: 'running',
@@ -851,6 +858,10 @@ export class AgentSSidecarManager {
     await this.terminateChild(
       normalizeTimeout(config.shutdownTimeoutMs, DEFAULT_SHUTDOWN_TIMEOUT_MS),
     );
+
+    if (lifecycleMarker !== this.lifecycleToken) {
+      return this.getStatus();
+    }
 
     this.updateStatus({
       state: 'timeout',
