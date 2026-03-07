@@ -12,18 +12,32 @@ const enforceAgentSSafetyDefaults = (settings: LocalStore): LocalStore => {
   return enforceAgentSSafetyPolicy(settings);
 };
 
+const agentSSidecarRelevantSettingsKeys = [
+  'engineMode',
+  'agentSSidecarMode',
+  'agentSSidecarUrl',
+  'agentSSidecarPort',
+] as const satisfies readonly (keyof LocalStore)[];
+
+const haveAgentSSidecarRelevantSettingsChanged = (
+  previousSettings: LocalStore,
+  nextSettings: LocalStore,
+): boolean => {
+  return agentSSidecarRelevantSettingsKeys.some(
+    (key) => previousSettings[key] !== nextSettings[key],
+  );
+};
+
 export function registerSettingsHandlers(
   onSettingsUpdated?: (settings: LocalStore) => Promise<void> | void,
 ) {
-  const notifySettingsUpdated = async () => {
+  const notifySettingsUpdated = async (settings: LocalStore) => {
     if (!onSettingsUpdated) {
       return;
     }
 
-    const latestSettings = SettingStore.getStore();
-
     try {
-      await onSettingsUpdated(latestSettings);
+      await onSettingsUpdated(settings);
     } catch (error) {
       logger.error('Failed to handle settings update callback:', error);
     }
@@ -54,8 +68,16 @@ export function registerSettingsHandlers(
    * Update setting
    */
   ipcMain.handle('setting:update', async (_, settings: LocalStore) => {
-    SettingStore.setStore(enforceAgentSSafetyDefaults(settings));
-    await notifySettingsUpdated();
+    const previousSettings = SettingStore.getStore();
+    const nextSettings = enforceAgentSSafetyDefaults(settings);
+
+    SettingStore.setStore(nextSettings);
+
+    if (
+      haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
+    ) {
+      await notifySettingsUpdated(nextSettings);
+    }
   });
 
   /**
@@ -63,9 +85,17 @@ export function registerSettingsHandlers(
    */
   ipcMain.handle('setting:importPresetFromText', async (_, yamlContent) => {
     try {
+      const previousSettings = SettingStore.getStore();
       const newSettings = await SettingStore.importPresetFromText(yamlContent);
-      SettingStore.setStore(enforceAgentSSafetyDefaults(newSettings));
-      await notifySettingsUpdated();
+      const nextSettings = enforceAgentSSafetyDefaults(newSettings);
+
+      SettingStore.setStore(nextSettings);
+
+      if (
+        haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
+      ) {
+        await notifySettingsUpdated(nextSettings);
+      }
     } catch (error) {
       logger.error('Failed to import preset:', error);
       throw error;
@@ -77,8 +107,9 @@ export function registerSettingsHandlers(
    */
   ipcMain.handle('setting:importPresetFromUrl', async (_, url, autoUpdate) => {
     try {
+      const previousSettings = SettingStore.getStore();
       const newSettings = await SettingStore.fetchPresetFromUrl(url);
-      SettingStore.setStore({
+      const nextSettings: LocalStore = {
         ...enforceAgentSSafetyDefaults(newSettings),
         presetSource: {
           type: 'remote',
@@ -86,8 +117,15 @@ export function registerSettingsHandlers(
           autoUpdate: autoUpdate,
           lastUpdated: Date.now(),
         },
-      });
-      await notifySettingsUpdated();
+      };
+
+      SettingStore.setStore(nextSettings);
+
+      if (
+        haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
+      ) {
+        await notifySettingsUpdated(nextSettings);
+      }
     } catch (error) {
       logger.error('Failed to import preset from URL:', error);
       throw error;
@@ -98,21 +136,31 @@ export function registerSettingsHandlers(
    * Update setting preset from url
    */
   ipcMain.handle('setting:updatePresetFromRemote', async () => {
-    const settings = SettingStore.getStore();
-    if (settings.presetSource?.type === 'remote' && settings.presetSource.url) {
+    const previousSettings = SettingStore.getStore();
+    if (
+      previousSettings.presetSource?.type === 'remote' &&
+      previousSettings.presetSource.url
+    ) {
       const newSettings = await SettingStore.fetchPresetFromUrl(
-        settings.presetSource.url,
+        previousSettings.presetSource.url,
       );
-      SettingStore.setStore({
+      const nextSettings: LocalStore = {
         ...enforceAgentSSafetyDefaults(newSettings),
         presetSource: {
           type: 'remote',
-          url: settings.presetSource.url,
-          autoUpdate: settings.presetSource.autoUpdate,
+          url: previousSettings.presetSource.url,
+          autoUpdate: previousSettings.presetSource.autoUpdate,
           lastUpdated: Date.now(),
         },
-      });
-      await notifySettingsUpdated();
+      };
+
+      SettingStore.setStore(nextSettings);
+
+      if (
+        haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
+      ) {
+        await notifySettingsUpdated(nextSettings);
+      }
     } else {
       throw new Error('No remote preset configured');
     }

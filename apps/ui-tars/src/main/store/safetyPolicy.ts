@@ -39,5 +39,11 @@ export const enforceAgentSSafetyPolicy = (settings: LocalStore): LocalStore => {
       AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
       AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
     ),
+    agentSTurnTimeoutMs: normalizeBoundedNumber(
+      settings.agentSTurnTimeoutMs,
+      AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
+      AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
+      AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+    ),
   };
 };

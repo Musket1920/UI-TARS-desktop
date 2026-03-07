@@ -3,6 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  AgentSSidecarMode,
+  EngineMode,
+  LocalStore,
+  Operator,
+} from '../store/types';
 
 const {
   ipcMainHandleMock,
@@ -50,16 +56,6 @@ vi.mock('../logger', () => ({
 import { registerSettingsHandlers } from './settings';
 
 type RegisteredHandler = (...args: unknown[]) => Promise<void>;
-type UnsafeSettings = {
-  language: string;
-  vlmBaseUrl: string;
-  vlmApiKey: string;
-  vlmModelName: string;
-  operator: string;
-  agentSEnableLocalEnv: boolean;
-  maxLoopCount: number;
-  loopIntervalInMs: number;
-};
 
 const getHandler = (name: string) => {
   const entry = ipcMainHandleMock.mock.calls.find((call) => call[0] === name);
@@ -67,23 +63,36 @@ const getHandler = (name: string) => {
   return entry?.[1] as RegisteredHandler;
 };
 
-const unsafeSettings: UnsafeSettings = {
+const createSettings = (overrides: Partial<LocalStore> = {}): LocalStore => ({
   language: 'en',
   vlmBaseUrl: 'https://vlm.example.com',
   vlmApiKey: 'key',
   vlmModelName: 'model',
-  operator: 'Local Computer Operator',
+  operator: Operator.LocalComputer,
+  engineMode: EngineMode.UITARS,
+  agentSSidecarMode: AgentSSidecarMode.Embedded,
+  agentSSidecarUrl: 'https://embedded-sidecar.example.com',
+  agentSSidecarPort: 11435,
+  agentSEnableLocalEnv: false,
+  maxLoopCount: 100,
+  loopIntervalInMs: 1000,
+  agentSTurnTimeoutMs: 1000,
+  ...overrides,
+});
+
+const unsafeSettings = createSettings({
   agentSEnableLocalEnv: true,
   maxLoopCount: 999,
   loopIntervalInMs: 10_000,
-};
+  agentSTurnTimeoutMs: 10_000,
+});
 
-const safeSettings: UnsafeSettings = {
-  ...unsafeSettings,
+const safeSettings = createSettings({
   agentSEnableLocalEnv: false,
   maxLoopCount: 200,
   loopIntervalInMs: 3000,
-};
+  agentSTurnTimeoutMs: 3000,
+});
 
 describe('safety-defaults settings handlers', () => {
   beforeEach(() => {
@@ -94,7 +103,7 @@ describe('safety-defaults settings handlers', () => {
     registerSettingsHandlers(onSettingsUpdatedMock);
   });
 
-  it('forces agentSEnableLocalEnv=false on setting:update', async () => {
+  it('does not notify sidecar callback for unrelated setting changes', async () => {
     getStoreMock.mockReturnValue(safeSettings);
     const handler = getHandler('setting:update');
 
@@ -105,75 +114,77 @@ describe('safety-defaults settings handlers', () => {
       agentSEnableLocalEnv: false,
       maxLoopCount: 200,
       loopIntervalInMs: 3000,
+      agentSTurnTimeoutMs: 3000,
     });
+    expect(onSettingsUpdatedMock).not.toHaveBeenCalled();
+  });
+
+  it('notifies sidecar callback when Agent-S lifecycle settings change', async () => {
+    getStoreMock.mockReturnValue(safeSettings);
+    const handler = getHandler('setting:update');
+
+    await handler(
+      {},
+      createSettings({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://remote-sidecar.example.com',
+        agentSSidecarPort: 4317,
+        agentSEnableLocalEnv: true,
+        maxLoopCount: 999,
+        loopIntervalInMs: 10_000,
+        agentSTurnTimeoutMs: 10_000,
+      }),
+    );
+
     expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
     expect(onSettingsUpdatedMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://remote-sidecar.example.com',
+        agentSSidecarPort: 4317,
         agentSEnableLocalEnv: false,
         maxLoopCount: 200,
         loopIntervalInMs: 3000,
+        agentSTurnTimeoutMs: 3000,
       }),
     );
   });
 
-  it('forces agentSEnableLocalEnv=false on preset imports', async () => {
+  it('passes the latest safety-enforced settings to callback after preset import', async () => {
     getStoreMock.mockReturnValue(safeSettings);
-    importPresetFromTextMock.mockResolvedValue({ ...unsafeSettings });
-    fetchPresetFromUrlMock.mockResolvedValue({ ...unsafeSettings });
-
-    const importTextHandler = getHandler('setting:importPresetFromText');
-    await importTextHandler({}, 'yaml-content');
-
-    const importUrlHandler = getHandler('setting:importPresetFromUrl');
-    await importUrlHandler({}, 'https://preset.example.com', true);
-
-    expect(setStoreMock.mock.calls[0][0]).toMatchObject({
-      agentSEnableLocalEnv: false,
-    });
-    expect(onSettingsUpdatedMock).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        agentSEnableLocalEnv: false,
+    importPresetFromTextMock.mockResolvedValue(
+      createSettings({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://imported-sidecar.example.com',
+        agentSSidecarPort: 8443,
+        agentSEnableLocalEnv: true,
+        maxLoopCount: 999,
+        loopIntervalInMs: 10_000,
+        agentSTurnTimeoutMs: 10_000,
       }),
     );
-    expect(setStoreMock.mock.calls[1][0]).toMatchObject({
-      agentSEnableLocalEnv: false,
-      maxLoopCount: 200,
-      loopIntervalInMs: 3000,
-      presetSource: {
-        type: 'remote',
-        url: 'https://preset.example.com',
-        autoUpdate: true,
-      },
-    });
-    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(2);
-  });
 
-  it('forces safety policy bounds during remote preset refresh', async () => {
-    getStoreMock.mockReturnValue({
-      presetSource: {
-        type: 'remote',
-        url: 'https://preset.example.com',
-        autoUpdate: true,
-      },
-    });
-    fetchPresetFromUrlMock.mockResolvedValue({ ...unsafeSettings });
-
-    const handler = getHandler('setting:updatePresetFromRemote');
-    await handler({});
+    const handler = getHandler('setting:importPresetFromText');
+    await handler({}, 'yaml-content');
 
     expect(setStoreMock).toHaveBeenCalledTimes(1);
     expect(setStoreMock.mock.calls[0][0]).toMatchObject({
+      engineMode: EngineMode.AgentS,
+      agentSSidecarMode: AgentSSidecarMode.Remote,
+      agentSSidecarUrl: 'https://imported-sidecar.example.com',
+      agentSSidecarPort: 8443,
       agentSEnableLocalEnv: false,
       maxLoopCount: 200,
       loopIntervalInMs: 3000,
-      presetSource: {
-        type: 'remote',
-        url: 'https://preset.example.com',
-        autoUpdate: true,
-      },
+      agentSTurnTimeoutMs: 3000,
     });
     expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledWith(
+      setStoreMock.mock.calls[0][0],
+    );
   });
 
   it('logs and swallows callback failures after settings mutation', async () => {
@@ -181,7 +192,14 @@ describe('safety-defaults settings handlers', () => {
     onSettingsUpdatedMock.mockRejectedValueOnce(callbackError);
     const handler = getHandler('setting:update');
 
-    await expect(handler({}, unsafeSettings)).resolves.toBeUndefined();
+    await expect(
+      handler(
+        {},
+        createSettings({
+          engineMode: EngineMode.AgentS,
+        }),
+      ),
+    ).resolves.toBeUndefined();
 
     expect(setStoreMock).toHaveBeenCalledTimes(1);
     expect(loggerErrorMock).toHaveBeenCalledWith(

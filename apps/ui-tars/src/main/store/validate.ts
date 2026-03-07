@@ -5,6 +5,10 @@
 import { z } from 'zod';
 
 import {
+  AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+  AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
+} from './safetyPolicy';
+import {
   SearchEngineForSettings,
   VLMProviderV2,
   Operator,
@@ -33,6 +37,11 @@ export const PresetSchema = z.object({
   screenshotScale: z.number().min(0.1).max(1).optional(),
   maxLoopCount: z.number().min(25).max(200).optional(),
   loopIntervalInMs: z.number().min(0).max(3000).optional(),
+  agentSTurnTimeoutMs: z
+    .number()
+    .min(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS)
+    .max(AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS)
+    .optional(),
   searchEngineForBrowser: z.nativeEnum(SearchEngineForSettings).optional(),
   engineMode: z.nativeEnum(EngineMode).optional(),
   agentSSidecarMode: z.nativeEnum(AgentSSidecarMode).optional(),

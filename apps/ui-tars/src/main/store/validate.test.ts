@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { validatePreset } from './validate';
+import { AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS } from './safetyPolicy';
 import {
   AgentSSidecarMode,
   EngineMode,
@@ -47,6 +48,17 @@ describe('validatePreset schema for Agent-S settings', () => {
         vlmBaseUrl: '',
       }),
     ).toThrow(/vlmBaseUrl/);
+  });
+
+  it('accepts Agent-S turn timeout bounds', () => {
+    const validated = validatePreset({
+      ...basePreset(),
+      agentSTurnTimeoutMs: AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+    });
+
+    expect(validated.agentSTurnTimeoutMs).toBe(
+      AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+    );
   });
 
   it('accepts Agent-S config with remote sidecar details', () => {
