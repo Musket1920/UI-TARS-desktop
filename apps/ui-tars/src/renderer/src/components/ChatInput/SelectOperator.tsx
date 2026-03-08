@@ -119,7 +119,7 @@ export const SelectOperator = () => {
       },
       fetchStatus: async () => {
         const [healthPayload, runtimePayload] = await Promise.all([
-          api.getAgentSHealth(),
+          api.getAgentSHealth({ forceProbe: false }),
           api.getAgentRuntimeStatus(),
         ]);
 

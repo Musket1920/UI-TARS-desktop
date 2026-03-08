@@ -58,6 +58,10 @@ type AgentSHealthRoutePayload = {
   timestamp: number;
 };
 
+type AgentSHealthRouteInput = {
+  forceProbe?: boolean;
+};
+
 type AgentSControlStatus = 'idle' | 'running' | 'paused';
 
 type AgentSControlRoutePayload = {
@@ -182,40 +186,44 @@ export class GUIAgentManager {
 }
 
 export const agentRoute = t.router({
-  getAgentSHealth: t.procedure.input<void>().handle(async () => {
-    const sidecarStatus = await agentSSidecarManager
-      .health({ probe: true })
-      .catch(() => agentSSidecarManager.getStatus());
-    const breaker = agentSSidecarManager.getCircuitBreakerStatus();
-    const baseHealthView = buildHealthPresentation(sidecarStatus);
-    const healthView =
-      breaker.state === 'open'
-        ? {
-            status: 'degraded' as const,
-            message:
-              'Agent-S is temporarily bypassed after repeated failures. Legacy fallback is active.',
-            reasonCode: 'circuit_breaker_open',
-            failureClass:
-              breaker.lastFailureClass ?? ('degraded_fallback' as const),
-          }
-        : baseHealthView;
-    const payload: AgentSHealthRoutePayload = {
-      status: healthView.status,
-      message: healthView.message,
-      reasonCode: healthView.reasonCode,
-      failureClass: healthView.failureClass,
-      circuitBreaker: {
-        state: breaker.state,
-        open: breaker.state === 'open',
-        canProbe: breaker.canProbe,
-        nextProbeAt: breaker.nextProbeAt,
-      },
-      engine: createEngineStatus(),
-      timestamp: sidecarStatus.checkedAt,
-    };
+  getAgentSHealth: t.procedure
+    .input<AgentSHealthRouteInput | void>()
+    .handle(async ({ input }) => {
+      const sidecarStatus = input?.forceProbe
+        ? await agentSSidecarManager
+            .health({ probe: true })
+            .catch(() => agentSSidecarManager.getStatus())
+        : agentSSidecarManager.getStatus();
+      const breaker = agentSSidecarManager.getCircuitBreakerStatus();
+      const baseHealthView = buildHealthPresentation(sidecarStatus);
+      const healthView =
+        breaker.state === 'open'
+          ? {
+              status: 'degraded' as const,
+              message:
+                'Agent-S is temporarily bypassed after repeated failures. Legacy fallback is active.',
+              reasonCode: 'circuit_breaker_open',
+              failureClass:
+                breaker.lastFailureClass ?? ('degraded_fallback' as const),
+            }
+          : baseHealthView;
+      const payload: AgentSHealthRoutePayload = {
+        status: healthView.status,
+        message: healthView.message,
+        reasonCode: healthView.reasonCode,
+        failureClass: healthView.failureClass,
+        circuitBreaker: {
+          state: breaker.state,
+          open: breaker.state === 'open',
+          canProbe: breaker.canProbe,
+          nextProbeAt: breaker.nextProbeAt,
+        },
+        engine: createEngineStatus(),
+        timestamp: sidecarStatus.checkedAt,
+      };
 
-    return sanitizeAgentSBoundaryPayload(payload);
-  }),
+      return sanitizeAgentSBoundaryPayload(payload);
+    }),
   getAgentRuntimeStatus: t.procedure.input<void>().handle(async () => {
     const engine = createEngineStatus();
     const status: AgentSControlStatus = engine.paused

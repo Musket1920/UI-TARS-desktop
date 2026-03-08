@@ -99,6 +99,13 @@ vi.mock('@main/services/agentS/sidecarManager', () => ({
 }));
 
 describe('ipc-agent-s-health route payload', () => {
+  const invokeHealthRoute = (input?: { forceProbe?: boolean }) => {
+    return agentRoute.getAgentSHealth.handle({
+      input,
+      context: {} as GetAgentSHealthContext,
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetAgentSLifecycle();
@@ -137,8 +144,8 @@ describe('ipc-agent-s-health route payload', () => {
     setAgentSActive(false);
   });
 
-  it('returns stable sanitized health fields', async () => {
-    sidecarHealthMock.mockResolvedValue({
+  it('uses cached status by default without probing live health', async () => {
+    sidecarGetStatusMock.mockReturnValue({
       state: 'running',
       mode: 'embedded',
       healthy: true,
@@ -148,10 +155,7 @@ describe('ipc-agent-s-health route payload', () => {
       lastHeartbeatAt: 1700000000123,
     });
 
-    const payload = await agentRoute.getAgentSHealth.handle({
-      input: undefined,
-      context: {} as GetAgentSHealthContext,
-    });
+    const payload = await invokeHealthRoute();
 
     expect(payload).toEqual({
       status: 'healthy',
@@ -177,6 +181,27 @@ describe('ipc-agent-s-health route payload', () => {
     expect(payload).not.toHaveProperty('pid');
     expect(payload).not.toHaveProperty('endpoint');
     expect(payload).not.toHaveProperty('reason');
+    expect(sidecarHealthMock).not.toHaveBeenCalled();
+    expect(sidecarGetStatusMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a live probe when explicitly requested', async () => {
+    sidecarHealthMock.mockResolvedValue({
+      state: 'running',
+      mode: 'embedded',
+      healthy: true,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 4242,
+      checkedAt: 1700000000555,
+      lastHeartbeatAt: 1700000000555,
+    });
+
+    const payload = await invokeHealthRoute({ forceProbe: true });
+
+    expect(payload.status).toBe('healthy');
+    expect(payload.timestamp).toBe(1700000000555);
+    expect(sidecarHealthMock).toHaveBeenCalledWith({ probe: true });
+    expect(sidecarGetStatusMock).not.toHaveBeenCalled();
   });
 
   it('maps stopped sidecar to offline status', async () => {
@@ -191,10 +216,7 @@ describe('ipc-agent-s-health route payload', () => {
       reason: 'stop_requested',
     });
 
-    const payload = await agentRoute.getAgentSHealth.handle({
-      input: undefined,
-      context: {} as GetAgentSHealthContext,
-    });
+    const payload = await invokeHealthRoute({ forceProbe: true });
 
     expect(payload.status).toBe('offline');
     expect(payload.reasonCode).toBe('stop_requested');
@@ -214,10 +236,7 @@ describe('ipc-agent-s-health route payload', () => {
       reason: 'startup_timeout',
     });
 
-    const payload = await agentRoute.getAgentSHealth.handle({
-      input: undefined,
-      context: {} as GetAgentSHealthContext,
-    });
+    const payload = await invokeHealthRoute({ forceProbe: true });
 
     expect(payload.status).toBe('degraded');
     expect(payload.message).toContain('Model loading...');
@@ -239,14 +258,12 @@ describe('ipc-agent-s-health route payload', () => {
       reason: 'heartbeat_failed',
     });
 
-    const payload = await agentRoute.getAgentSHealth.handle({
-      input: undefined,
-      context: {} as GetAgentSHealthContext,
-    });
+    const payload = await invokeHealthRoute({ forceProbe: true });
 
     expect(payload.status).toBe('degraded');
     expect(payload.reasonCode).toBe('heartbeat_failed');
     expect(payload.timestamp).toBe(1700000001234);
+    expect(sidecarHealthMock).toHaveBeenCalledWith({ probe: true });
     expect(sidecarGetStatusMock).toHaveBeenCalledTimes(1);
   });
 
@@ -275,10 +292,7 @@ describe('ipc-agent-s-health route payload', () => {
       lastRecoveryAt: null,
     });
 
-    const payload = await agentRoute.getAgentSHealth.handle({
-      input: undefined,
-      context: {} as GetAgentSHealthContext,
-    });
+    const payload = await invokeHealthRoute({ forceProbe: true });
 
     expect(payload.status).toBe('degraded');
     expect(payload.reasonCode).toBe('circuit_breaker_open');
@@ -304,10 +318,7 @@ describe('ipc-agent-s-health route payload', () => {
       reason: 'AGENT_S_PREDICTION_MALFORMED',
     });
 
-    const payload = await agentRoute.getAgentSHealth.handle({
-      input: undefined,
-      context: {} as GetAgentSHealthContext,
-    });
+    const payload = await invokeHealthRoute({ forceProbe: true });
 
     expect(payload.status).toBe('degraded');
     expect(payload.failureClass).toBe('invalid_output');

@@ -247,7 +247,7 @@ export const createAgentSStatusLoader = <THealth, TRuntimeStatus>({
 }: {
   setLoadingStatus: (loading: boolean) => void;
   setStatus: (status: AgentSStatusSnapshot<THealth, TRuntimeStatus>) => void;
-  fetchStatus: () => Promise<{
+  fetchStatus: (options?: { forceProbe?: boolean }) => Promise<{
     health: THealth;
     runtimeStatus: TRuntimeStatus;
   }>;
@@ -255,7 +255,7 @@ export const createAgentSStatusLoader = <THealth, TRuntimeStatus>({
 }) => {
   let active = true;
 
-  const run = async () => {
+  const run = async (options?: { forceProbe?: boolean }) => {
     if (!active) {
       return;
     }
@@ -263,7 +263,7 @@ export const createAgentSStatusLoader = <THealth, TRuntimeStatus>({
     setLoadingStatus(true);
 
     try {
-      const nextStatus = await fetchStatus();
+      const nextStatus = await fetchStatus(options);
 
       if (!active) {
         return;
@@ -508,7 +508,7 @@ export function EngineSettings({ className }: { className?: string }) {
 
   const statusLoader = useMemo(
     () =>
-      createAgentSStatusLoader({
+      createAgentSStatusLoader<AgentSHealthPayload, AgentRuntimeStatusPayload>({
         setLoadingStatus: setIsLoadingStatus,
         setStatus: ({
           health: nextHealth,
@@ -517,9 +517,9 @@ export function EngineSettings({ className }: { className?: string }) {
           setHealth(nextHealth);
           setRuntimeStatus(nextRuntimeStatus);
         },
-        fetchStatus: async () => {
+        fetchStatus: async (options) => {
           const [healthPayload, runtimePayload] = await Promise.all([
-            api.getAgentSHealth(),
+            api.getAgentSHealth({ forceProbe: options?.forceProbe ?? false }),
             api.getAgentRuntimeStatus(),
           ]);
 
@@ -688,7 +688,7 @@ export function EngineSettings({ className }: { className?: string }) {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => void statusLoader.run()}
+            onClick={() => void statusLoader.run({ forceProbe: true })}
             disabled={isLoadingStatus}
           >
             {isLoadingStatus ? (
