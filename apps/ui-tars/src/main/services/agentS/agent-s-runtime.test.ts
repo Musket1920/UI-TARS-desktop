@@ -103,6 +103,31 @@ const createFakeSidecarManager = () => {
   };
 };
 
+const createDeferredHealthSidecarManager = () => {
+  const healthyStatus = {
+    state: 'running',
+    mode: 'embedded',
+    healthy: true,
+    endpoint: 'http://127.0.0.1:10800',
+    pid: 4242,
+    checkedAt: 1_000,
+    lastHeartbeatAt: 1_000,
+  } as const;
+
+  let resolveHealth: ((value: typeof healthyStatus) => void) | undefined;
+  const healthPending = new Promise<typeof healthyStatus>((resolve) => {
+    resolveHealth = resolve;
+  });
+
+  return {
+    health: vi.fn(async () => healthPending),
+    getStatus: vi.fn(() => ({ ...healthyStatus })),
+    resolveHealth: () => {
+      resolveHealth?.({ ...healthyStatus });
+    },
+  };
+};
+
 const failingFetch: typeof fetch = async () => {
   throw new Error('network down');
 };
@@ -124,10 +149,10 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     setAgentSActive(false);
   });
 
-  it('executes one successful turn and records state updates', async () => {
+  it('sets active only after sidecar preflight succeeds and clears it after a successful run', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();
-    const sidecarManager = createFakeSidecarManager();
+    const sidecarManager = createDeferredHealthSidecarManager();
 
     translateAgentSActionMock.mockReturnValue({
       ok: true,
@@ -177,6 +202,11 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
       },
     });
 
+    expect(isAgentSActive()).toBe(false);
+
+    sidecarManager.resolveHealth();
+    await flushMicrotasks();
+
     expect(isAgentSActive()).toBe(true);
 
     deferredFetch.resolve();
@@ -187,6 +217,49 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(result.stepsExecuted).toBeGreaterThanOrEqual(1);
     expect(operator.execute).toHaveBeenCalledTimes(1);
     expect(history.some((state) => state.status === StatusEnum.END)).toBe(true);
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('keeps active false when sidecar preflight fails before the first turn', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const unhealthyStatus = {
+      state: 'unhealthy',
+      mode: 'embedded',
+      healthy: false,
+      endpoint: null,
+      pid: null,
+      checkedAt: 1_000,
+      lastHeartbeatAt: null,
+      reason: 'health_http_error',
+    } as const;
+    const sidecarManager = {
+      health: vi.fn(async () => ({ ...unhealthyStatus })),
+      getStatus: vi.fn(() => ({ ...unhealthyStatus })),
+    };
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'fail sidecar preflight',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: failingFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_SIDECAR_UNHEALTHY');
+    expect(result.error?.step).toBe(0);
+    expect(operator.screenshot).not.toHaveBeenCalled();
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
     expect(isAgentSActive()).toBe(false);
   });
 

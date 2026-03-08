@@ -400,8 +400,6 @@ export const runAgentSRuntimeLoop = async (
   const maxSteps = normalizeMaxSteps(args.settings);
   const turnTimeoutMs = normalizeTurnTimeoutMs(args.settings);
 
-  setAgentSActive(true);
-
   try {
     const providerConfig = mapProviderToAgentSConfig(args.settings);
 
@@ -432,6 +430,8 @@ export const runAgentSRuntimeLoop = async (
         sidecarStatus,
       );
     }
+
+    setAgentSActive(true);
 
     for (let step = 1; step <= maxSteps; step += 1) {
       await ensureAgentSNotPaused(args.getState().abortController?.signal);
