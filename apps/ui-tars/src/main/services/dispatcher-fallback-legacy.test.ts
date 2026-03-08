@@ -302,6 +302,12 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
     expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
     expect(utioSendInstructionMock).toHaveBeenCalledTimes(1);
 
+    // Direct legacy fallback should have exactly one lifecycle pair
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+
     const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
       (call) =>
         call[0] === 'agent_s.fallback.triggered' &&
@@ -330,6 +336,12 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
     expect(runAgentSRuntimeLoopMock).not.toHaveBeenCalled();
     expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
     expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
+
+    // Direct legacy fallback should have exactly one lifecycle pair
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
 
     const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
       (call) =>
@@ -382,6 +394,12 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
         errorMsg: null,
       }),
     );
+
+    // Agent-S attempted and failed, then fell back: exactly one lifecycle pair spanning both
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
 
     const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
       (call) =>
@@ -438,6 +456,12 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
 
     expect(runAgentSRuntimeLoopMock).not.toHaveBeenCalled();
     expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+
+    // Direct legacy fallback should have exactly one lifecycle pair
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
 
     const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
       (call) =>
@@ -498,6 +522,13 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
 
     expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
     expect(guiAgentCtorMock).not.toHaveBeenCalled();
+
+    // Agent-S succeeded: exactly one lifecycle pair
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+
     expect(sidecarRecordCircuitSuccessMock).toHaveBeenCalledWith({
       source: 'runtime',
     });

@@ -4,8 +4,6 @@
  */
 import { type LocalStore, VLMProviderV2 } from '@main/store/types';
 
-const API_KEY_FIELD = `api${'Key'}` as const;
-
 export type AgentSEngineType = 'openai' | 'huggingface';
 
 export type AgentSEngineParams = {
@@ -19,7 +17,7 @@ export type AgentSProviderConfig = {
   provider: AgentSEngineType;
   model: string;
   baseURL: string;
-  [API_KEY_FIELD]: string;
+  apiKey: string;
   useResponsesApi: boolean;
   engineParamsForGeneration: AgentSEngineParams;
   engineParamsForGrounding: AgentSEngineParams;
@@ -121,7 +119,7 @@ export const mapProviderToAgentSConfig = (
     provider,
     model,
     baseURL,
-    [API_KEY_FIELD]: apiKeyValue,
+    apiKey: apiKeyValue,
     useResponsesApi: Boolean(settings.useResponsesApi),
     engineParamsForGeneration: engineParams,
     engineParamsForGrounding: { ...engineParams },
