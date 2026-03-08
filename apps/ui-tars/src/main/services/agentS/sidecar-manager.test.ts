@@ -321,6 +321,63 @@ describe('sidecar-manager', () => {
     expect(probed.healthy).toBe(true);
   });
 
+  it('keeps stored running status when an explicit probe fails transiently', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(createHealthyResponse())
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ status: 'down' }),
+      } as Response)
+      .mockResolvedValueOnce(createHealthyResponse());
+
+    const manager = new AgentSSidecarManager({
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const started = await manager.start({
+      mode: 'external',
+      endpoint: 'https://agent-s.local',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 5_000,
+      healthTimeoutMs: 300,
+    });
+
+    expect(started.state).toBe('running');
+    expect(started.healthy).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    const failedProbe = await manager.health({ probe: true });
+
+    expect(failedProbe.state).toBe('unhealthy');
+    expect(failedProbe.healthy).toBe(false);
+    expect(failedProbe.reason).toBe('health_http_error');
+
+    const storedAfterFailedProbe = manager.getStatus();
+    expect(storedAfterFailedProbe.state).toBe('running');
+    expect(storedAfterFailedProbe.healthy).toBe(true);
+    expect(storedAfterFailedProbe.reason).toBeUndefined();
+    expect(storedAfterFailedProbe.checkedAt).toBe(started.checkedAt);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    const recoveredProbe = await manager.health({ probe: true });
+
+    expect(recoveredProbe.state).toBe('running');
+    expect(recoveredProbe.healthy).toBe(true);
+    expect(recoveredProbe.checkedAt).toBeGreaterThan(started.checkedAt);
+
+    const storedAfterRecoveredProbe = manager.getStatus();
+    expect(storedAfterRecoveredProbe.state).toBe('running');
+    expect(storedAfterRecoveredProbe.healthy).toBe(true);
+    expect(storedAfterRecoveredProbe.checkedAt).toBe(recoveredProbe.checkedAt);
+    expect(storedAfterRecoveredProbe.lastHeartbeatAt).toBe(
+      recoveredProbe.checkedAt,
+    );
+  });
+
   it('keeps default /health endpoints unchanged but honors explicit custom health paths', async () => {
     const defaultFetchMock = vi
       .fn<typeof fetch>()
