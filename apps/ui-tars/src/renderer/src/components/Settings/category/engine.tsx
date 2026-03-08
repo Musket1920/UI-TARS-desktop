@@ -69,8 +69,11 @@ type FormValues = z.infer<typeof formSchema>;
 
 type PersistedAgentSFormValues = Pick<
   FormValues,
-  'engineMode' | 'agentSSidecarMode' | 'agentSSidecarUrl' | 'agentSSidecarPort'
->;
+  'engineMode' | 'agentSSidecarMode'
+> & {
+  agentSSidecarUrl: NonNullable<FormValues['agentSSidecarUrl']>;
+  agentSSidecarPort: NonNullable<FormValues['agentSSidecarPort']>;
+};
 
 type AgentSPersistEffectInputs = PersistedAgentSFormValues & {
   hasPersistedSettings: boolean;
@@ -118,6 +121,72 @@ export const getAgentSPersistEffectInputs = (
   inputs: AgentSPersistEffectInputs,
 ): AgentSPersistEffectInputs => {
   return inputs;
+};
+
+const AGENT_S_FIELD_PERSIST_DELAY_MS = 300;
+
+export const createSettledAgentSFieldPersistScheduler = <
+  TValue,
+  TPersistedValue,
+>({
+  delayMs = AGENT_S_FIELD_PERSIST_DELAY_MS,
+  trigger,
+  getLatestValue,
+  normalizeValue,
+  getPersistedValue,
+  persistValue,
+  scheduleTimeout = setTimeout,
+  clearScheduledTimeout = clearTimeout,
+}: {
+  delayMs?: number;
+  trigger: () => Promise<boolean>;
+  getLatestValue: () => TValue;
+  normalizeValue: (value: TValue) => TPersistedValue;
+  getPersistedValue: () => TPersistedValue;
+  persistValue: (value: TPersistedValue) => void;
+  scheduleTimeout?: (
+    callback: () => void,
+    delayMs: number,
+  ) => ReturnType<typeof setTimeout>;
+  clearScheduledTimeout?: (timeoutId: ReturnType<typeof setTimeout>) => void;
+}) => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const cancel = () => {
+    if (timeoutId === null) {
+      return;
+    }
+
+    clearScheduledTimeout(timeoutId);
+    timeoutId = null;
+  };
+
+  const schedule = (pendingValue: TValue) => {
+    cancel();
+    timeoutId = scheduleTimeout(() => {
+      timeoutId = null;
+
+      void (async () => {
+        const isValid = await trigger();
+        const latestValue = getLatestValue();
+
+        if (!isValid || latestValue !== pendingValue) {
+          return;
+        }
+
+        const normalizedValue = normalizeValue(pendingValue);
+
+        if (normalizedValue !== getPersistedValue()) {
+          persistValue(normalizedValue);
+        }
+      })();
+    }, delayMs);
+  };
+
+  return {
+    schedule,
+    cancel,
+  };
 };
 
 export const createAgentSStatusLoader = <THealth, TRuntimeStatus>({
@@ -226,8 +295,8 @@ export function EngineSettings({ className }: { className?: string }) {
         hasPersistedSettings,
         engineMode: newEngineMode,
         agentSSidecarMode: newSidecarMode,
-        agentSSidecarUrl: newSidecarUrl,
-        agentSSidecarPort: newSidecarPort,
+        agentSSidecarUrl: newSidecarUrl ?? '',
+        agentSSidecarPort: newSidecarPort ?? '',
       }),
     [
       hasPersistedSettings,
@@ -253,6 +322,40 @@ export function EngineSettings({ className }: { className?: string }) {
       updateSetting(nextSettings);
     },
     [updateSetting],
+  );
+
+  const sidecarUrlPersistScheduler = useMemo(
+    () =>
+      createSettledAgentSFieldPersistScheduler<
+        string,
+        LocalStore['agentSSidecarUrl']
+      >({
+        trigger: () => form.trigger('agentSSidecarUrl'),
+        getLatestValue: () => form.getValues('agentSSidecarUrl') ?? '',
+        normalizeValue: (value) => (value === '' ? undefined : value.trim()),
+        getPersistedValue: () => latestSettingsRef.current.agentSSidecarUrl,
+        persistValue: (value) => {
+          persistSettingsDelta({ agentSSidecarUrl: value });
+        },
+      }),
+    [form, persistSettingsDelta],
+  );
+
+  const sidecarPortPersistScheduler = useMemo(
+    () =>
+      createSettledAgentSFieldPersistScheduler<
+        string,
+        LocalStore['agentSSidecarPort']
+      >({
+        trigger: () => form.trigger('agentSSidecarPort'),
+        getLatestValue: () => form.getValues('agentSSidecarPort') ?? '',
+        normalizeValue: (value) => toPersistedSidecarPort(value),
+        getPersistedValue: () => latestSettingsRef.current.agentSSidecarPort,
+        persistValue: (value) => {
+          persistSettingsDelta({ agentSSidecarPort: value });
+        },
+      }),
+    [form, persistSettingsDelta],
   );
 
   useEffect(() => {
@@ -288,40 +391,39 @@ export function EngineSettings({ className }: { className?: string }) {
         persistSettingsDelta({ agentSSidecarMode: persistedSidecarMode });
       }
 
-      if (persistedSidecarUrl !== undefined) {
-        const pendingSidecarUrl = persistedSidecarUrl;
-        const isUrlValid = await form.trigger('agentSSidecarUrl');
-        const latestSidecarUrl = form.getValues('agentSSidecarUrl');
+      const normalizedSidecarUrl =
+        persistedSidecarUrl === '' ? undefined : persistedSidecarUrl.trim();
 
-        if (isUrlValid && latestSidecarUrl === pendingSidecarUrl) {
-          const normalizedSidecarUrl =
-            pendingSidecarUrl === '' ? undefined : pendingSidecarUrl.trim();
-
-          if (
-            normalizedSidecarUrl !== latestSettingsRef.current.agentSSidecarUrl
-          ) {
-            persistSettingsDelta({ agentSSidecarUrl: normalizedSidecarUrl });
-          }
-        }
+      if (normalizedSidecarUrl !== latestSettingsRef.current.agentSSidecarUrl) {
+        sidecarUrlPersistScheduler.schedule(persistedSidecarUrl);
+      } else {
+        sidecarUrlPersistScheduler.cancel();
       }
 
-      if (persistedSidecarPort !== undefined) {
-        const pendingSidecarPort = persistedSidecarPort;
-        const isPortValid = await form.trigger('agentSSidecarPort');
-        const latestSidecarPort = form.getValues('agentSSidecarPort');
+      const normalizedSidecarPort =
+        toPersistedSidecarPort(persistedSidecarPort);
 
-        if (isPortValid && latestSidecarPort === pendingSidecarPort) {
-          const normalizedPort = toPersistedSidecarPort(pendingSidecarPort);
-
-          if (normalizedPort !== latestSettingsRef.current.agentSSidecarPort) {
-            persistSettingsDelta({ agentSSidecarPort: normalizedPort });
-          }
-        }
+      if (
+        normalizedSidecarPort !== latestSettingsRef.current.agentSSidecarPort
+      ) {
+        sidecarPortPersistScheduler.schedule(persistedSidecarPort);
+      } else {
+        sidecarPortPersistScheduler.cancel();
       }
     };
 
     void persist();
-  }, [persistEffectInputs, persistSettingsDelta, form]);
+
+    return () => {
+      sidecarUrlPersistScheduler.cancel();
+      sidecarPortPersistScheduler.cancel();
+    };
+  }, [
+    persistEffectInputs,
+    persistSettingsDelta,
+    sidecarUrlPersistScheduler,
+    sidecarPortPersistScheduler,
+  ]);
 
   const statusLoader = useMemo(
     () =>

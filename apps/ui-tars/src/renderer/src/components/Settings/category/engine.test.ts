@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AgentSSidecarMode,
@@ -15,6 +15,9 @@ vi.mock('@main/store/types', () => ({
   EngineMode: {
     UITARS: 'ui-tars',
     AgentS: 'agent-s',
+  },
+  Operator: {
+    LocalComputer: 'Local Computer Operator',
   },
 }));
 
@@ -85,6 +88,7 @@ vi.mock('lucide-react', () => ({
 
 import {
   createAgentSStatusLoader,
+  createSettledAgentSFieldPersistScheduler,
   getAgentSPersistEffectInputs,
   getPersistedAgentSFormValues,
 } from './engine';
@@ -188,6 +192,116 @@ describe('Agent-S settings persist effect inputs', () => {
     });
 
     expect(externalAgentSChange).not.toEqual(baseInputs);
+  });
+});
+
+describe('createSettledAgentSFieldPersistScheduler', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('persists only the latest settled valid sidecar URL', async () => {
+    let latestValue = 'https://sidecar.example.com';
+    let persistedValue: string | undefined;
+    const trigger = vi.fn().mockResolvedValue(true);
+    const persistValue = vi.fn((value: string | undefined) => {
+      persistedValue = value;
+    });
+
+    const scheduler = createSettledAgentSFieldPersistScheduler<
+      string,
+      string | undefined
+    >({
+      delayMs: 25,
+      trigger,
+      getLatestValue: () => latestValue,
+      normalizeValue: (value) => (value === '' ? undefined : value.trim()),
+      getPersistedValue: () => persistedValue,
+      persistValue,
+    });
+
+    latestValue = 'https://sidecar.example.com/a';
+    scheduler.schedule(latestValue);
+    await vi.advanceTimersByTimeAsync(10);
+
+    latestValue = 'https://sidecar.example.com/ab';
+    scheduler.schedule(latestValue);
+    await vi.advanceTimersByTimeAsync(10);
+
+    latestValue = 'https://sidecar.example.com/abc';
+    scheduler.schedule(latestValue);
+
+    await vi.advanceTimersByTimeAsync(24);
+    expect(trigger).not.toHaveBeenCalled();
+    expect(persistValue).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(trigger).toHaveBeenCalledTimes(1);
+    expect(persistValue).toHaveBeenCalledTimes(1);
+    expect(persistValue).toHaveBeenCalledWith(
+      'https://sidecar.example.com/abc',
+    );
+  });
+
+  it('skips stale async URL persistence when the form value changes mid-validation', async () => {
+    let latestValue = 'https://sidecar.example.com';
+    let persistedValue: string | undefined;
+    const validation = createDeferred<boolean>();
+    const persistValue = vi.fn((value: string | undefined) => {
+      persistedValue = value;
+    });
+
+    const scheduler = createSettledAgentSFieldPersistScheduler<
+      string,
+      string | undefined
+    >({
+      delayMs: 25,
+      trigger: () => validation.promise,
+      getLatestValue: () => latestValue,
+      normalizeValue: (value) => (value === '' ? undefined : value.trim()),
+      getPersistedValue: () => persistedValue,
+      persistValue,
+    });
+
+    scheduler.schedule(latestValue);
+    await vi.advanceTimersByTimeAsync(25);
+
+    latestValue = 'https://sidecar.example.com/next';
+    validation.resolve(true);
+    await Promise.resolve();
+
+    expect(persistValue).not.toHaveBeenCalled();
+  });
+
+  it('normalizes a settled sidecar port input before persisting', async () => {
+    let latestValue = '54321';
+    let persistedValue: number | undefined;
+    const persistValue = vi.fn((value: number | undefined) => {
+      persistedValue = value;
+    });
+
+    const scheduler = createSettledAgentSFieldPersistScheduler<
+      string,
+      number | undefined
+    >({
+      delayMs: 25,
+      trigger: vi.fn().mockResolvedValue(true),
+      getLatestValue: () => latestValue,
+      normalizeValue: (value) => (value === '' ? undefined : Number(value)),
+      getPersistedValue: () => persistedValue,
+      persistValue,
+    });
+
+    scheduler.schedule(latestValue);
+    await vi.advanceTimersByTimeAsync(25);
+
+    expect(persistValue).toHaveBeenCalledTimes(1);
+    expect(persistValue).toHaveBeenCalledWith(54321);
   });
 });
 
