@@ -46,6 +46,31 @@ const createHealthyResponse = (payload: unknown = { healthy: true }) =>
     json: async () => payload,
   }) as Response;
 
+const withHalfOpenProbeConfig = async (callback: () => Promise<void>) => {
+  const originalThreshold =
+    process.env.AGENT_S_CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+  const originalCooldown = process.env.AGENT_S_CIRCUIT_BREAKER_COOLDOWN_MS;
+
+  process.env.AGENT_S_CIRCUIT_BREAKER_FAILURE_THRESHOLD = '1';
+  process.env.AGENT_S_CIRCUIT_BREAKER_COOLDOWN_MS = '0';
+
+  try {
+    await callback();
+  } finally {
+    if (typeof originalThreshold === 'undefined') {
+      delete process.env.AGENT_S_CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+    } else {
+      process.env.AGENT_S_CIRCUIT_BREAKER_FAILURE_THRESHOLD = originalThreshold;
+    }
+
+    if (typeof originalCooldown === 'undefined') {
+      delete process.env.AGENT_S_CIRCUIT_BREAKER_COOLDOWN_MS;
+    } else {
+      process.env.AGENT_S_CIRCUIT_BREAKER_COOLDOWN_MS = originalCooldown;
+    }
+  }
+};
+
 class MockChildProcess extends EventEmitter {
   pid: number;
   exitCode: number | null = null;
@@ -663,6 +688,136 @@ describe('sidecar-manager', () => {
       'http://127.0.0.1:9720/health',
       expect.objectContaining({ method: 'GET' }),
     );
+  });
+
+  it('deduplicates concurrent half-open probe failures', async () => {
+    await withHalfOpenProbeConfig(async () => {
+      const halfOpenProbe = createDeferred<Response>();
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(createHealthyResponse())
+        .mockImplementationOnce(() => halfOpenProbe.promise);
+
+      const manager = new AgentSSidecarManager({
+        fetch: fetchMock,
+        now: () => Date.now(),
+      });
+
+      await manager.start({
+        mode: 'external',
+        endpoint: 'https://agent-s.local',
+        startupTimeoutMs: 1_000,
+        startupPollIntervalMs: 100,
+        heartbeatIntervalMs: 5_000,
+        healthTimeoutMs: 300,
+      });
+
+      manager.recordCircuitFailure({
+        source: 'runtime',
+        reasonCode: 'AGENT_S_TURN_REQUEST_FAILED',
+      });
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      const failureSpy = vi.spyOn(manager, 'recordCircuitFailure');
+      const successSpy = vi.spyOn(manager, 'recordCircuitSuccess');
+
+      const firstDecisionPromise = manager.evaluateDispatchCircuit();
+      const secondDecisionPromise = manager.evaluateDispatchCircuit();
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(failureSpy).not.toHaveBeenCalled();
+      expect(successSpy).not.toHaveBeenCalled();
+
+      halfOpenProbe.resolve({
+        ok: false,
+        status: 503,
+        json: async () => ({ status: 'down' }),
+      } as Response);
+
+      const [firstDecision, secondDecision] = await Promise.all([
+        firstDecisionPromise,
+        secondDecisionPromise,
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(failureSpy).toHaveBeenCalledTimes(1);
+      expect(successSpy).not.toHaveBeenCalled();
+      expect(firstDecision.allowAgentS).toBe(false);
+      expect(firstDecision.reasonCode).toBe('circuit_breaker_open');
+      expect(firstDecision.breaker.state).toBe('open');
+      expect(secondDecision.allowAgentS).toBe(false);
+      expect(secondDecision.reasonCode).toBe('circuit_breaker_open');
+      expect(secondDecision.breaker.state).toBe('open');
+      expect(firstDecision.sidecarStatus?.checkedAt).toBe(
+        secondDecision.sidecarStatus?.checkedAt,
+      );
+    });
+  });
+
+  it('deduplicates concurrent half-open probe recovery', async () => {
+    await withHalfOpenProbeConfig(async () => {
+      const halfOpenProbe = createDeferred<Response>();
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(createHealthyResponse())
+        .mockImplementationOnce(() => halfOpenProbe.promise);
+
+      const manager = new AgentSSidecarManager({
+        fetch: fetchMock,
+        now: () => Date.now(),
+      });
+
+      await manager.start({
+        mode: 'external',
+        endpoint: 'https://agent-s.local',
+        startupTimeoutMs: 1_000,
+        startupPollIntervalMs: 100,
+        heartbeatIntervalMs: 5_000,
+        healthTimeoutMs: 300,
+      });
+
+      manager.recordCircuitFailure({
+        source: 'runtime',
+        reasonCode: 'AGENT_S_TURN_REQUEST_FAILED',
+      });
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      const failureSpy = vi.spyOn(manager, 'recordCircuitFailure');
+      const successSpy = vi.spyOn(manager, 'recordCircuitSuccess');
+
+      const firstDecisionPromise = manager.evaluateDispatchCircuit();
+      const secondDecisionPromise = manager.evaluateDispatchCircuit();
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(failureSpy).not.toHaveBeenCalled();
+      expect(successSpy).not.toHaveBeenCalled();
+
+      halfOpenProbe.resolve(createHealthyResponse());
+
+      const [firstDecision, secondDecision] = await Promise.all([
+        firstDecisionPromise,
+        secondDecisionPromise,
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(failureSpy).not.toHaveBeenCalled();
+      expect(successSpy).toHaveBeenCalledTimes(1);
+      expect(firstDecision.allowAgentS).toBe(true);
+      expect(firstDecision.reasonCode).toBe('circuit_breaker_recovered');
+      expect(firstDecision.breaker.state).toBe('closed');
+      expect(secondDecision.allowAgentS).toBe(true);
+      expect(secondDecision.reasonCode).toBe('circuit_breaker_recovered');
+      expect(secondDecision.breaker.state).toBe('closed');
+      expect(firstDecision.sidecarStatus?.checkedAt).toBe(
+        secondDecision.sidecarStatus?.checkedAt,
+      );
+    });
   });
 
   it('strips --enable_local_env from embedded sidecar args before spawn', async () => {

@@ -368,6 +368,9 @@ export class AgentSSidecarManager {
 
   private heartbeatInFlight = false;
 
+  private dispatchCircuitProbePromise: Promise<CircuitDispatchDecision> | null =
+    null;
+
   private telemetryCorrelation: AgentSCorrelationIds = {};
 
   private lastFallbackEventSignature: string | null = null;
@@ -444,30 +447,51 @@ export class AgentSSidecarManager {
       };
     }
 
-    this.circuitBreakerState.state = 'half_open';
+    return this.evaluateHalfOpenDispatchCircuit();
+  }
 
-    const sidecarStatus = await this.health({ probe: true }).catch(() => null);
-    if (sidecarStatus?.healthy && sidecarStatus.endpoint) {
-      const recovered = this.recordCircuitSuccess({ source: 'probe' });
-      return {
-        allowAgentS: true,
-        reasonCode: 'circuit_breaker_recovered',
-        breaker: recovered,
-        sidecarStatus,
-      };
+  private evaluateHalfOpenDispatchCircuit(): Promise<CircuitDispatchDecision> {
+    if (this.dispatchCircuitProbePromise) {
+      return this.dispatchCircuitProbePromise;
     }
 
-    const failed = this.recordCircuitFailure({
-      source: 'probe',
-      reasonCode: sidecarStatus?.reason ?? 'sidecar_health_probe_failed',
+    this.circuitBreakerState.state = 'half_open';
+
+    const probePromise = (async (): Promise<CircuitDispatchDecision> => {
+      const sidecarStatus = await this.health({ probe: true }).catch(
+        () => null,
+      );
+      if (sidecarStatus?.healthy && sidecarStatus.endpoint) {
+        const recovered = this.recordCircuitSuccess({ source: 'probe' });
+        return {
+          allowAgentS: true,
+          reasonCode: 'circuit_breaker_recovered',
+          breaker: recovered,
+          sidecarStatus,
+        };
+      }
+
+      const failed = this.recordCircuitFailure({
+        source: 'probe',
+        reasonCode: sidecarStatus?.reason ?? 'sidecar_health_probe_failed',
+      });
+
+      return {
+        allowAgentS: false,
+        reasonCode: 'circuit_breaker_open',
+        breaker: failed,
+        sidecarStatus,
+      };
+    })();
+
+    const sharedProbePromise = probePromise.finally(() => {
+      if (this.dispatchCircuitProbePromise === sharedProbePromise) {
+        this.dispatchCircuitProbePromise = null;
+      }
     });
 
-    return {
-      allowAgentS: false,
-      reasonCode: 'circuit_breaker_open',
-      breaker: failed,
-      sidecarStatus,
-    };
+    this.dispatchCircuitProbePromise = sharedProbePromise;
+    return sharedProbePromise;
   }
 
   recordCircuitFailure(
