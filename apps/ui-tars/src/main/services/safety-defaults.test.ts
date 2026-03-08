@@ -69,6 +69,22 @@ const getHandler = (name: string) => {
   return entry?.[1] as RegisteredHandler;
 };
 
+const createDeferred = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
+};
+
 const createSettings = (overrides: Partial<LocalStore> = {}): LocalStore => ({
   language: 'en',
   vlmBaseUrl: 'https://vlm.example.com',
@@ -167,6 +183,40 @@ describe('safety-defaults settings handlers', () => {
     );
   });
 
+  it('does not await sidecar callback when Agent-S lifecycle settings change', async () => {
+    const callbackDeferred = createDeferred<void>();
+    let callbackSettled = false;
+
+    callbackDeferred.promise.finally(() => {
+      callbackSettled = true;
+    });
+    onSettingsUpdatedMock.mockImplementation(() => callbackDeferred.promise);
+    getStoreMock.mockReturnValue(safeSettings);
+
+    const handler = getHandler('setting:update');
+
+    await expect(
+      handler(
+        {},
+        createSettings({
+          engineMode: EngineMode.AgentS,
+        }),
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(setStoreMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engineMode: EngineMode.AgentS,
+      }),
+    );
+    expect(callbackSettled).toBe(false);
+
+    callbackDeferred.resolve();
+    await callbackDeferred.promise;
+  });
+
   it('passes the latest safety-enforced settings to callback after preset import', async () => {
     getStoreMock.mockReturnValue(safeSettings);
     importPresetFromTextMock.mockResolvedValue(
@@ -202,9 +252,11 @@ describe('safety-defaults settings handlers', () => {
     );
   });
 
-  it('logs and swallows callback failures after settings mutation', async () => {
+  it('logs and swallows async callback failures after settings mutation', async () => {
     const callbackError = new Error('callback failed');
-    onSettingsUpdatedMock.mockRejectedValueOnce(callbackError);
+    const callbackDeferred = createDeferred<void>();
+
+    onSettingsUpdatedMock.mockImplementation(() => callbackDeferred.promise);
     const handler = getHandler('setting:update');
 
     await expect(
@@ -215,6 +267,10 @@ describe('safety-defaults settings handlers', () => {
         }),
       ),
     ).resolves.toBeUndefined();
+
+    callbackDeferred.reject(callbackError);
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(setStoreMock).toHaveBeenCalledTimes(1);
     expect(loggerErrorMock).toHaveBeenCalledWith(

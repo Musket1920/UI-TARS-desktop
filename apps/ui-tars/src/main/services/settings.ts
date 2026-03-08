@@ -76,7 +76,7 @@ export function registerSettingsHandlers(
     if (
       haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
     ) {
-      await notifySettingsUpdated(nextSettings);
+      void notifySettingsUpdated(nextSettings);
     }
   });
 
