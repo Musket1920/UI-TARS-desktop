@@ -15,7 +15,9 @@ type SettingInputBase = {
   modelName: string;
 };
 
-type VLMCheckInput = SettingInputBase & Record<string, string>;
+type VLMCheckInput = SettingInputBase & {
+  apiKey: string;
+};
 
 const buildOpenAIConfig = (
   baseURL: string,
