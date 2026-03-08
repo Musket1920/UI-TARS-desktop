@@ -256,10 +256,9 @@ const ChatInput = ({
             <span
               data-testid="run-status"
               data-status={runStatus}
-              className="text-xs text-muted-foreground"
-            >
-              {runStatus}
-            </span>
+              aria-hidden="true"
+              hidden
+            />
             {running && (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             )}
