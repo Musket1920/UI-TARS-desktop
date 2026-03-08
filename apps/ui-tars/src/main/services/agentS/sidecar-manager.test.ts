@@ -820,6 +820,94 @@ describe('sidecar-manager', () => {
     });
   });
 
+  it('stop invalidates a stale half-open probe before the next lifecycle', async () => {
+    await withHalfOpenProbeConfig(async () => {
+      const staleHalfOpenProbe = createDeferred<Response>();
+      const freshHalfOpenProbe = createDeferred<Response>();
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(createHealthyResponse())
+        .mockImplementationOnce(() => staleHalfOpenProbe.promise)
+        .mockResolvedValueOnce(createHealthyResponse())
+        .mockImplementationOnce(() => freshHalfOpenProbe.promise);
+
+      const manager = new AgentSSidecarManager({
+        fetch: fetchMock,
+        now: () => Date.now(),
+      });
+
+      await manager.start({
+        mode: 'external',
+        endpoint: 'https://agent-s.local',
+        startupTimeoutMs: 1_000,
+        startupPollIntervalMs: 100,
+        heartbeatIntervalMs: 5_000,
+        healthTimeoutMs: 300,
+      });
+
+      manager.recordCircuitFailure({
+        source: 'runtime',
+        reasonCode: 'AGENT_S_TURN_REQUEST_FAILED',
+      });
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      const successSpy = vi.spyOn(manager, 'recordCircuitSuccess');
+      const failureSpy = vi.spyOn(manager, 'recordCircuitFailure');
+
+      const staleDecisionPromise = manager.evaluateDispatchCircuit();
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      const stopped = await manager.stop();
+
+      expect(stopped.state).toBe('stopped');
+      expect(stopped.reason).toBe('stop_requested');
+      expect(manager.getCircuitBreakerStatus().state).toBe('open');
+
+      const restarted = await manager.start({
+        mode: 'external',
+        endpoint: 'https://agent-s-next.local',
+        startupTimeoutMs: 1_000,
+        startupPollIntervalMs: 100,
+        heartbeatIntervalMs: 5_000,
+        healthTimeoutMs: 300,
+      });
+
+      expect(restarted.state).toBe('running');
+      expect(restarted.endpoint).toBe('https://agent-s-next.local');
+
+      const freshDecisionPromise = manager.evaluateDispatchCircuit();
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(successSpy).not.toHaveBeenCalled();
+      expect(failureSpy).not.toHaveBeenCalled();
+
+      staleHalfOpenProbe.resolve(createHealthyResponse());
+      const staleDecision = await staleDecisionPromise;
+
+      expect(staleDecision.allowAgentS).toBe(false);
+      expect(staleDecision.reasonCode).toBe('circuit_breaker_open');
+      expect(successSpy).not.toHaveBeenCalled();
+      expect(failureSpy).not.toHaveBeenCalled();
+      expect(manager.getCircuitBreakerStatus().state).toBe('half_open');
+
+      freshHalfOpenProbe.resolve(createHealthyResponse());
+      const freshDecision = await freshDecisionPromise;
+
+      expect(freshDecision.allowAgentS).toBe(true);
+      expect(freshDecision.reasonCode).toBe('circuit_breaker_recovered');
+      expect(freshDecision.breaker.state).toBe('closed');
+      expect(successSpy).toHaveBeenCalledTimes(1);
+      expect(failureSpy).not.toHaveBeenCalled();
+      expect(manager.getCircuitBreakerStatus().state).toBe('closed');
+    });
+  });
+
   it('strips --enable_local_env from embedded sidecar args before spawn', async () => {
     const child = new MockChildProcess(9999);
     const spawnMock = vi.fn<SpawnFunction>(

@@ -371,6 +371,8 @@ export class AgentSSidecarManager {
   private dispatchCircuitProbePromise: Promise<CircuitDispatchDecision> | null =
     null;
 
+  private dispatchCircuitProbeGeneration = 0;
+
   private telemetryCorrelation: AgentSCorrelationIds = {};
 
   private lastFallbackEventSignature: string | null = null;
@@ -456,11 +458,27 @@ export class AgentSSidecarManager {
     }
 
     this.circuitBreakerState.state = 'half_open';
+    const lifecycleMarker = this.lifecycleToken;
+    const probeGeneration = this.dispatchCircuitProbeGeneration;
 
     const probePromise = (async (): Promise<CircuitDispatchDecision> => {
       const sidecarStatus = await this.health({ probe: true }).catch(
         () => null,
       );
+      if (
+        lifecycleMarker !== this.lifecycleToken ||
+        probeGeneration !== this.dispatchCircuitProbeGeneration
+      ) {
+        const breaker = this.getCircuitBreakerStatus();
+        return {
+          allowAgentS: breaker.state === 'closed',
+          reasonCode:
+            breaker.state === 'closed' ? null : 'circuit_breaker_open',
+          breaker,
+          sidecarStatus: null,
+        };
+      }
+
       if (sidecarStatus?.healthy && sidecarStatus.endpoint) {
         const recovered = this.recordCircuitSuccess({ source: 'probe' });
         return {
@@ -670,6 +688,7 @@ export class AgentSSidecarManager {
 
   async stop(): Promise<SidecarStatus> {
     const stopMarker = ++this.lifecycleToken;
+    this.invalidateDispatchCircuitProbe();
     this.stopHeartbeat();
 
     const shouldStopChild = this.child !== null;
@@ -990,6 +1009,18 @@ export class AgentSSidecarManager {
     if (this.heartbeatTimer) {
       this.deps.clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+  }
+
+  private invalidateDispatchCircuitProbe() {
+    this.dispatchCircuitProbeGeneration += 1;
+    this.dispatchCircuitProbePromise = null;
+
+    if (this.circuitBreakerState.state === 'half_open') {
+      this.circuitBreakerState.state = 'open';
+      if (this.circuitBreakerState.openedAt === null) {
+        this.circuitBreakerState.openedAt = this.deps.now();
+      }
     }
   }
 
