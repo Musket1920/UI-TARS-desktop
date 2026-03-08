@@ -50,10 +50,57 @@ const parseSidecarArgs = (rawArgs: string | undefined): string[] => {
     return [];
   }
 
-  return rawArgs
-    .split(' ')
-    .map((arg) => arg.trim())
-    .filter(Boolean);
+  const args: string[] = [];
+  let currentArg = '';
+  let activeQuote: '"' | "'" | null = null;
+
+  const pushCurrentArg = () => {
+    const trimmedArg = currentArg.trim();
+
+    if (trimmedArg) {
+      args.push(trimmedArg);
+    }
+
+    currentArg = '';
+  };
+
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const char = rawArgs[index];
+
+    if (activeQuote) {
+      const nextChar = rawArgs[index + 1];
+
+      if (char === '\\' && (nextChar === activeQuote || nextChar === '\\')) {
+        currentArg += nextChar;
+        index += 1;
+        continue;
+      }
+
+      if (char === activeQuote) {
+        activeQuote = null;
+        continue;
+      }
+
+      currentArg += char;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      activeQuote = char;
+      continue;
+    }
+
+    if (char === ' ') {
+      pushCurrentArg();
+      continue;
+    }
+
+    currentArg += char;
+  }
+
+  pushCurrentArg();
+
+  return args;
 };
 
 const startAgentSSidecarIfNeeded = async (
