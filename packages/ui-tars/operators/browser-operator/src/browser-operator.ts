@@ -392,6 +392,12 @@ export class BrowserOperator extends Operator {
 
     if (rawContent === '') {
       this.logger.info('Clearing selected content');
+      await shortcuts(
+        page,
+        [KEY_MAPPINGS.control, KEY_MAPPINGS.a],
+        this.options.browserType,
+      );
+      await this.delay(50);
       await page.keyboard.press('Backspace');
       return;
     }
