@@ -62,6 +62,11 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+type PersistedAgentSFormValues = Pick<
+  FormValues,
+  'engineMode' | 'agentSSidecarMode' | 'agentSSidecarUrl' | 'agentSSidecarPort'
+>;
+
 const HEALTH_BADGE_VARIANT: Record<
   AgentSHealthPayload['status'],
   'default' | 'destructive' | 'outline' | 'secondary'
@@ -89,6 +94,17 @@ const toPersistedSidecarPort = (
   return port === undefined || port === '' ? undefined : Number(port);
 };
 
+export const getPersistedAgentSFormValues = (
+  settings: LocalStore,
+): PersistedAgentSFormValues => {
+  return {
+    engineMode: settings.engineMode ?? EngineMode.UITARS,
+    agentSSidecarMode: settings.agentSSidecarMode ?? AgentSSidecarMode.Embedded,
+    agentSSidecarUrl: settings.agentSSidecarUrl ?? '',
+    agentSSidecarPort: toSidecarPortInputValue(settings.agentSSidecarPort),
+  };
+};
+
 export function EngineSettings({ className }: { className?: string }) {
   const { settings, updateSetting } = useSetting();
   const latestSettingsRef = useRef(settings);
@@ -114,6 +130,28 @@ export function EngineSettings({ className }: { className?: string }) {
       'agentSSidecarUrl',
       'agentSSidecarPort',
     ]);
+  const hasPersistedSettings = Object.keys(settings).length > 0;
+  const persistedEngineMode = settings.engineMode ?? EngineMode.UITARS;
+  const persistedSidecarMode =
+    settings.agentSSidecarMode ?? AgentSSidecarMode.Embedded;
+  const persistedSidecarUrl = settings.agentSSidecarUrl ?? '';
+  const persistedSidecarPort = toSidecarPortInputValue(
+    settings.agentSSidecarPort,
+  );
+  const persistedAgentSFormValues = useMemo(
+    () => ({
+      engineMode: persistedEngineMode,
+      agentSSidecarMode: persistedSidecarMode,
+      agentSSidecarUrl: persistedSidecarUrl,
+      agentSSidecarPort: persistedSidecarPort,
+    }),
+    [
+      persistedEngineMode,
+      persistedSidecarMode,
+      persistedSidecarUrl,
+      persistedSidecarPort,
+    ],
+  );
 
   useEffect(() => {
     latestSettingsRef.current = settings;
@@ -133,16 +171,10 @@ export function EngineSettings({ className }: { className?: string }) {
   );
 
   useEffect(() => {
-    if (Object.keys(settings).length) {
-      form.reset({
-        engineMode: settings.engineMode ?? EngineMode.UITARS,
-        agentSSidecarMode:
-          settings.agentSSidecarMode ?? AgentSSidecarMode.Embedded,
-        agentSSidecarUrl: settings.agentSSidecarUrl ?? '',
-        agentSSidecarPort: toSidecarPortInputValue(settings.agentSSidecarPort),
-      });
+    if (hasPersistedSettings) {
+      form.reset(persistedAgentSFormValues);
     }
-  }, [settings, form]);
+  }, [hasPersistedSettings, persistedAgentSFormValues, form]);
 
   useEffect(() => {
     if (!Object.keys(settings).length) {
