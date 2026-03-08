@@ -137,6 +137,54 @@ const flushMicrotasks = async () => {
   await Promise.resolve();
 };
 
+const createPredictResponse = (
+  action: string,
+  prediction = action,
+): Response => {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ action, prediction }),
+  } as Response;
+};
+
+const createTimerDeps = () => {
+  type ScheduledTimer = {
+    callback: () => void;
+    ms: number;
+    cleared: boolean;
+  };
+
+  const scheduled: ScheduledTimer[] = [];
+
+  const setTimeout = Object.assign(
+    vi.fn((callback: TimerHandler, ms?: number) => {
+      const timer: ScheduledTimer = {
+        callback: callback as () => void,
+        ms: typeof ms === 'number' ? ms : 0,
+        cleared: false,
+      };
+      scheduled.push(timer);
+      return timer as unknown as ReturnType<typeof globalThis.setTimeout>;
+    }),
+    {
+      __promisify__: globalThis.setTimeout.__promisify__,
+    },
+  ) as unknown as typeof globalThis.setTimeout;
+
+  const clearTimeout = vi.fn(((
+    timer: ReturnType<typeof globalThis.setTimeout>,
+  ) => {
+    (timer as unknown as ScheduledTimer).cleared = true;
+  }) as typeof globalThis.clearTimeout);
+
+  return {
+    scheduled,
+    setTimeout,
+    clearTimeout,
+  };
+};
+
 describe('agent-s-runtime runAgentSRuntimeLoop', () => {
   beforeEach(() => {
     translateAgentSActionMock.mockReset();
@@ -524,5 +572,129 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
       history.some((state) => state.status === StatusEnum.USER_STOPPED),
     ).toBe(true);
     expect(isAgentSActive()).toBe(false);
+  });
+
+  it('waits for loopIntervalInMs before starting the next running step', async () => {
+    const { setState, getState } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const timers = createTimerDeps();
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi
+        .fn()
+        .mockResolvedValue({ base64: 'ZmFrZQ==', scaleFactor: 1 }),
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce({ status: StatusEnum.RUNNING })
+        .mockResolvedValueOnce({ status: StatusEnum.END }),
+    };
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createPredictResponse('wait', 'keep going'));
+
+    translateAgentSActionMock.mockReturnValue({
+      ok: true,
+      normalizedAction: 'wait',
+      parsed: {
+        action_type: 'wait',
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    });
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: {
+        ...createSettings(),
+        loopIntervalInMs: 250,
+        agentSTurnTimeoutMs: 1_000,
+      },
+      operator,
+      instruction: 'wait between steps',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        now: () => 1_234,
+      },
+    });
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (timers.scheduled.some((timer) => timer.ms === 250)) {
+        break;
+      }
+
+      await flushMicrotasks();
+    }
+
+    const loopTimer = timers.scheduled.find((timer) => timer.ms === 250);
+
+    expect(loopTimer).toBeDefined();
+    expect(operator.screenshot).toHaveBeenCalledTimes(1);
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(predictFetch).toHaveBeenCalledTimes(1);
+
+    await flushMicrotasks();
+
+    expect(operator.screenshot).toHaveBeenCalledTimes(1);
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+
+    loopTimer?.callback();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.END);
+    expect(result.stepsExecuted).toBe(2);
+    expect(operator.screenshot).toHaveBeenCalledTimes(2);
+    expect(operator.execute).toHaveBeenCalledTimes(2);
+    expect(predictFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns immediately on terminal status without adding an extra loop delay', async () => {
+    const { setState, getState } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const timers = createTimerDeps();
+    const operator = createOperator();
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createPredictResponse('finished'));
+
+    translateAgentSActionMock.mockReturnValue({
+      ok: true,
+      normalizedAction: 'finished',
+      parsed: {
+        action_type: 'finished',
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    });
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: {
+        ...createSettings(),
+        loopIntervalInMs: 250,
+        agentSTurnTimeoutMs: 1_000,
+      },
+      operator,
+      instruction: 'finish immediately',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.END);
+    expect(result.stepsExecuted).toBe(1);
+    expect(timers.scheduled.some((timer) => timer.ms === 250)).toBe(false);
   });
 });

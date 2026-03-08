@@ -7,8 +7,10 @@ import { type ConversationWithSoM } from '@main/shared/types';
 import { type AppState, type LocalStore } from '@main/store/types';
 import {
   AGENT_S_SAFE_DEFAULT_MAX_STEPS,
+  AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS,
   AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
   AGENT_S_SAFE_MAX_STEPS,
+  AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
   AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
   AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
 } from '@main/store/safetyPolicy';
@@ -171,6 +173,70 @@ export const normalizeTurnTimeoutMs = (settings: LocalStore): number => {
   }
 
   return AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS;
+};
+
+const normalizeLoopIntervalMs = (settings: LocalStore): number => {
+  const intervalValue = settings.loopIntervalInMs;
+
+  if (typeof intervalValue === 'number' && Number.isFinite(intervalValue)) {
+    return Math.min(
+      AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+      Math.max(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS, Math.floor(intervalValue)),
+    );
+  }
+
+  return AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS;
+};
+
+const waitForLoopInterval = async (
+  deps: Pick<AgentSRuntimeDependencies, 'setTimeout' | 'clearTimeout'>,
+  intervalMs: number,
+  abortSignal?: AbortSignal,
+) => {
+  if (intervalMs <= 0 || abortSignal?.aborted) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timeout !== null) {
+        deps.clearTimeout(timeout);
+      }
+      abortSignal?.removeEventListener('abort', onAbort);
+    };
+
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const onAbort = () => {
+      finish();
+    };
+
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+
+    if (abortSignal?.aborted) {
+      finish();
+      return;
+    }
+
+    timeout = deps.setTimeout(() => {
+      finish();
+    }, intervalMs);
+
+    if (abortSignal?.aborted) {
+      finish();
+    }
+  });
 };
 
 const readImageSize = async (
@@ -398,6 +464,7 @@ export const runAgentSRuntimeLoop = async (
   };
 
   const maxSteps = normalizeMaxSteps(args.settings);
+  const loopIntervalInMs = normalizeLoopIntervalMs(args.settings);
   const turnTimeoutMs = normalizeTurnTimeoutMs(args.settings);
 
   try {
@@ -591,6 +658,14 @@ export const runAgentSRuntimeLoop = async (
           status: nextStatus,
           stepsExecuted: step,
         };
+      }
+
+      if (step < maxSteps) {
+        await waitForLoopInterval(
+          deps,
+          loopIntervalInMs,
+          args.getState().abortController?.signal,
+        );
       }
     }
 
