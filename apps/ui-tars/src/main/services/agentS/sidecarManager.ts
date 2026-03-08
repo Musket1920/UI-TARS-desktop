@@ -325,18 +325,19 @@ const resolveHealthUrl = (
   const normalizedPath = healthPath.startsWith('/')
     ? healthPath
     : `/${healthPath}`;
+  const normalizedEndpointPath = parsed.pathname.replace(/\/+$/, '') || '/';
+  const hasDefaultHealthSuffix =
+    normalizedEndpointPath.endsWith(DEFAULT_HEALTH_PATH);
 
-  if (
-    parsed.pathname.endsWith(DEFAULT_HEALTH_PATH) &&
-    normalizedPath === DEFAULT_HEALTH_PATH
-  ) {
+  if (hasDefaultHealthSuffix && normalizedPath === DEFAULT_HEALTH_PATH) {
+    parsed.pathname = normalizedEndpointPath;
     return parsed.toString();
   }
 
-  const pathname = parsed.pathname.endsWith(DEFAULT_HEALTH_PATH)
-    ? parsed.pathname.slice(0, -DEFAULT_HEALTH_PATH.length)
-    : parsed.pathname;
-  const normalizedBasePath = pathname.replace(/\/$/, '');
+  const pathname = hasDefaultHealthSuffix
+    ? normalizedEndpointPath.slice(0, -DEFAULT_HEALTH_PATH.length)
+    : normalizedEndpointPath;
+  const normalizedBasePath = pathname === '/' ? '' : pathname;
   parsed.pathname = normalizedBasePath
     ? `${normalizedBasePath}${normalizedPath}`
     : normalizedPath;

@@ -378,8 +378,11 @@ describe('sidecar-manager', () => {
     );
   });
 
-  it('keeps default /health endpoints unchanged but honors explicit custom health paths', async () => {
+  it('normalizes trailing /health endpoints and still honors explicit custom health paths', async () => {
     const defaultFetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createHealthyResponse({ status: 'running' }));
+    const trailingSlashFetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(createHealthyResponse({ status: 'running' }));
     const customFetchMock = vi
@@ -389,6 +392,11 @@ describe('sidecar-manager', () => {
     const defaultManager = new AgentSSidecarManager({
       spawn: vi.fn() as SpawnFunction,
       fetch: defaultFetchMock,
+      now: () => Date.now(),
+    });
+    const trailingSlashManager = new AgentSSidecarManager({
+      spawn: vi.fn() as SpawnFunction,
+      fetch: trailingSlashFetchMock,
       now: () => Date.now(),
     });
     const customManager = new AgentSSidecarManager({
@@ -405,9 +413,17 @@ describe('sidecar-manager', () => {
       heartbeatIntervalMs: 500,
       healthTimeoutMs: 300,
     });
+    await trailingSlashManager.start({
+      mode: 'external',
+      endpoint: 'http://127.0.0.1:9802/health/',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
     await customManager.start({
       mode: 'external',
-      endpoint: 'http://127.0.0.1:9801/health',
+      endpoint: 'http://127.0.0.1:9801/health/',
       healthPath: '/readyz',
       startupTimeoutMs: 1_000,
       startupPollIntervalMs: 100,
@@ -417,6 +433,10 @@ describe('sidecar-manager', () => {
 
     expect(defaultFetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:9800/health',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(trailingSlashFetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:9802/health',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(customFetchMock).toHaveBeenCalledWith(
