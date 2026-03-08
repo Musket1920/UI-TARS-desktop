@@ -36,7 +36,11 @@ export const PresetSchema = z.object({
   language: z.enum(['zh', 'en']).optional(),
   screenshotScale: z.number().min(0.1).max(1).optional(),
   maxLoopCount: z.number().min(25).max(200).optional(),
-  loopIntervalInMs: z.number().min(0).max(3000).optional(),
+  loopIntervalInMs: z
+    .number()
+    .min(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS)
+    .max(3000)
+    .optional(),
   agentSTurnTimeoutMs: z
     .number()
     .min(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS)
