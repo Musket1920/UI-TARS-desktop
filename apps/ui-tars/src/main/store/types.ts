@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { GUIAgentData, Message } from '@ui-tars/shared/types';
+import { ConversationWithSoM } from '@main/shared/types';
 
 import { LocalStore, PresetSource } from './validate';
 export enum EngineMode {
@@ -14,7 +15,6 @@ export enum AgentSSidecarMode {
   Embedded = 'embedded',
   Remote = 'remote',
 }
-import { ConversationWithSoM } from '@main/shared/types';
 
 export type NextAction =
   | { type: 'key'; text: string }
