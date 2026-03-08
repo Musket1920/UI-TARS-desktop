@@ -38,22 +38,26 @@ import { createAgentSStatusPoller } from './agentSStatusPolling';
 type AgentSHealth = Awaited<ReturnType<typeof api.getAgentSHealth>>;
 type AgentRuntimeStatus = Awaited<ReturnType<typeof api.getAgentRuntimeStatus>>;
 
-const getOperatorIcon = (type: string) => {
+const getOperatorIcon = (type: Operator) => {
   switch (type) {
-    case 'nutjs':
+    case Operator.RemoteComputer:
+    case Operator.LocalComputer:
       return <Monitor className="h-4 w-4 mr-2" />;
-    case 'browser':
+    case Operator.RemoteBrowser:
+    case Operator.LocalBrowser:
       return <Globe className="h-4 w-4 mr-2" />;
     default:
       return <Monitor className="h-4 w-4 mr-2" />;
   }
 };
 
-const getOperatorLabel = (type: string) => {
+const getOperatorLabel = (type: Operator) => {
   switch (type) {
-    case 'nutjs':
+    case Operator.RemoteComputer:
+    case Operator.LocalComputer:
       return COMPUTER_OPERATOR;
-    case 'browser':
+    case Operator.RemoteBrowser:
+    case Operator.LocalBrowser:
       return BROWSER_OPERATOR;
     default:
       return COMPUTER_OPERATOR;
