@@ -162,6 +162,8 @@ vi.mock('@ui-tars/sdk', () => ({
 }));
 
 import { EngineMode, Operator, VLMProviderV2 } from '@main/store/types';
+import { logger } from '@main/logger';
+import { DefaultBrowserOperator } from '@ui-tars/operator-browser';
 import { runAgent } from './runAgent';
 
 type RunAgentSetState = Parameters<typeof runAgent>[0];
@@ -413,6 +415,34 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
       source: 'runtime',
       reasonCode: 'AGENT_S_PREDICTION_MALFORMED',
     });
+  });
+
+  it('routes browser operator initialization failures through the guarded catch path', async () => {
+    const { setState, getState } = createStateHandlers();
+    settingStoreGetStoreMock.mockReturnValue({
+      ...createAgentSSettings(),
+      operator: Operator.LocalBrowser,
+    });
+    vi.mocked(DefaultBrowserOperator.getInstance).mockRejectedValueOnce(
+      new Error('browser init failed'),
+    );
+
+    await expect(
+      runAgent(
+        setState as unknown as RunAgentSetState,
+        getState as unknown as RunAgentGetState,
+      ),
+    ).rejects.toThrow('browser init failed');
+
+    expect(sidecarEvaluateDispatchCircuitMock).not.toHaveBeenCalled();
+    expect(beforeAgentRunMock).not.toHaveBeenCalled();
+    expect(afterAgentRunMock).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      '[runAgent try-catch error]',
+      expect.objectContaining({
+        message: 'browser init failed',
+      }),
+    );
   });
 
   it('does not poison the circuit breaker when Agent-S runtime hits max steps', async () => {

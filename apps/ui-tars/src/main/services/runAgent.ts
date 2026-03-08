@@ -203,51 +203,6 @@ export const runAgent = async (
     | RemoteBrowserOperator
     | null = null;
 
-  switch (settings.operator) {
-    case Operator.LocalComputer:
-      operator = new NutJSElectronOperator();
-      operatorType = 'computer';
-      break;
-    case Operator.LocalBrowser:
-      await checkBrowserAvailability();
-      {
-        const { browserAvailable } = getState();
-        if (!browserAvailable) {
-          setState({
-            ...getState(),
-            status: StatusEnum.ERROR,
-            errorMsg:
-              'Browser is not available. Please install Chrome and try again.',
-          });
-          return;
-        }
-
-        operator = await DefaultBrowserOperator.getInstance(
-          false,
-          false,
-          false,
-          getState().status === StatusEnum.CALL_USER,
-          getLocalBrowserSearchEngine(settings.searchEngineForBrowser),
-        );
-        operatorType = 'browser';
-      }
-      break;
-    case Operator.RemoteComputer:
-      operator = await RemoteComputerOperator.create();
-      operatorType = 'computer';
-      break;
-    case Operator.RemoteBrowser:
-      operator = await createRemoteBrowserOperator();
-      operatorType = 'browser';
-      break;
-    default:
-      break;
-  }
-
-  if (!operator) {
-    throw new Error('Operator failed to initialize');
-  }
-
   let sidecarHealthStatus: Awaited<
     ReturnType<typeof agentSSidecarManager.health>
   > | null = null;
@@ -256,34 +211,6 @@ export const runAgent = async (
   let dispatchCircuitStatus: ReturnType<
     typeof agentSSidecarManager.getCircuitBreakerStatus
   > | null = null;
-
-  if (shouldAttemptAgentS) {
-    const dispatchCircuit =
-      await agentSSidecarManager.evaluateDispatchCircuit();
-    dispatchCircuitStatus = dispatchCircuit.breaker;
-    circuitReasonCode = dispatchCircuit.reasonCode;
-
-    if (!dispatchCircuit.allowAgentS) {
-      sidecarHealthStatus = dispatchCircuit.sidecarStatus;
-    } else if (dispatchCircuit.sidecarStatus) {
-      sidecarHealthStatus = dispatchCircuit.sidecarStatus;
-      sidecarHealthProbeError = null;
-    }
-  }
-
-  if (shouldAttemptAgentS && !sidecarHealthStatus && !circuitReasonCode) {
-    sidecarHealthStatus = await agentSSidecarManager
-      .health({ probe: true })
-      .catch((error) => {
-        sidecarHealthProbeError = error;
-        return null;
-      });
-  }
-
-  const canUseAgentSRuntime =
-    shouldAttemptAgentS &&
-    !!sidecarHealthStatus?.healthy &&
-    !!sidecarHealthStatus.endpoint;
 
   let agentSWasAttempted = false;
   let agentSRunLifecycleClosed = false;
@@ -297,7 +224,95 @@ export const runAgent = async (
     agentSRunLifecycleClosed = true;
   };
 
+  const initializeOperator = async (): Promise<
+    | NutJSElectronOperator
+    | DefaultBrowserOperator
+    | RemoteComputerOperator
+    | RemoteBrowserOperator
+    | null
+  > => {
+    switch (settings.operator) {
+      case Operator.LocalComputer:
+        operator = new NutJSElectronOperator();
+        operatorType = 'computer';
+        break;
+      case Operator.LocalBrowser:
+        await checkBrowserAvailability();
+        {
+          const { browserAvailable } = getState();
+          if (!browserAvailable) {
+            setState({
+              ...getState(),
+              status: StatusEnum.ERROR,
+              errorMsg:
+                'Browser is not available. Please install Chrome and try again.',
+            });
+            return null;
+          }
+
+          operator = await DefaultBrowserOperator.getInstance(
+            false,
+            false,
+            false,
+            getState().status === StatusEnum.CALL_USER,
+            getLocalBrowserSearchEngine(settings.searchEngineForBrowser),
+          );
+          operatorType = 'browser';
+        }
+        break;
+      case Operator.RemoteComputer:
+        operator = await RemoteComputerOperator.create();
+        operatorType = 'computer';
+        break;
+      case Operator.RemoteBrowser:
+        operator = await createRemoteBrowserOperator();
+        operatorType = 'browser';
+        break;
+      default:
+        break;
+    }
+
+    if (!operator) {
+      throw new Error('Operator failed to initialize');
+    }
+
+    return operator;
+  };
+
   try {
+    const initializedOperator = await initializeOperator();
+    if (!initializedOperator) {
+      return;
+    }
+
+    if (shouldAttemptAgentS) {
+      const dispatchCircuit =
+        await agentSSidecarManager.evaluateDispatchCircuit();
+      dispatchCircuitStatus = dispatchCircuit.breaker;
+      circuitReasonCode = dispatchCircuit.reasonCode;
+
+      if (!dispatchCircuit.allowAgentS) {
+        sidecarHealthStatus = dispatchCircuit.sidecarStatus;
+      } else if (dispatchCircuit.sidecarStatus) {
+        sidecarHealthStatus = dispatchCircuit.sidecarStatus;
+        sidecarHealthProbeError = null;
+      }
+    }
+
+    if (shouldAttemptAgentS && !sidecarHealthStatus && !circuitReasonCode) {
+      sidecarHealthStatus = await agentSSidecarManager
+        .health({ probe: true })
+        .catch((error) => {
+          sidecarHealthProbeError = error;
+          return null;
+        });
+    }
+
+    const canUseAgentSRuntime =
+      shouldAttemptAgentS &&
+      !!sidecarHealthStatus?.healthy &&
+      !!sidecarHealthStatus.endpoint;
+
     if (runCorrelation) {
       emitAgentSTelemetry(
         'agent_s.engine.selected',
@@ -328,7 +343,7 @@ export const runAgent = async (
         setState,
         getState,
         settings,
-        operator,
+        operator: initializedOperator,
         instruction: instructions,
         sessionHistoryMessages,
         correlation: runCorrelation ?? undefined,
@@ -459,7 +474,7 @@ export const runAgent = async (
       systemPrompt: systemPrompt,
       logger,
       signal: abortController?.signal,
-      operator: operator!,
+      operator: initializedOperator,
       onData: handleData,
       onError: (params) => {
         const { error } = params;
