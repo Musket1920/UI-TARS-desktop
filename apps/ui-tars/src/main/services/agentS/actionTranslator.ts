@@ -112,6 +112,58 @@ const asNonEmptyString = (value: unknown): string | null => {
   return trimmed === '' ? null : trimmed;
 };
 
+const hasUnsafeTopLevelCode = (value: string): boolean => {
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  let depth = 0;
+  let topLevelText = '';
+
+  for (const char of value) {
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (char === quote) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+
+    if (char === '(') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ')') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (depth === 0) {
+      topLevelText += char;
+    }
+  }
+
+  return (
+    topLevelText.includes(';') ||
+    /\bimport\b/i.test(topLevelText) ||
+    /\bpyautogui\b/i.test(topLevelText)
+  );
+};
+
 const parseArgs = (
   rawArgs: string,
 ): Record<string, unknown> | AgentSActionTranslationError => {
@@ -167,22 +219,19 @@ const parseInput = (
       );
     }
 
-    if (
-      trimmed.includes(';') ||
-      /\bimport\b/i.test(trimmed) ||
-      /pyautogui/i.test(trimmed)
-    ) {
+    const segment =
+      trimmed
+        .split(/Action[:：]/)
+        .pop()
+        ?.trim() ?? trimmed;
+
+    if (hasUnsafeTopLevelCode(segment)) {
       return errorResult(
         'TRANSLATION_MALFORMED_INPUT',
         'Only single action calls are supported',
       );
     }
 
-    const segment =
-      trimmed
-        .split(/Action[:：]/)
-        .pop()
-        ?.trim() ?? trimmed;
     const match = segment.match(/^(\w+)(?:\((.*)\))?$/);
 
     if (!match) {

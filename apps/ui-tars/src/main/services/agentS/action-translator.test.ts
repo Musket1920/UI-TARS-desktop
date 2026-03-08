@@ -101,6 +101,21 @@ describe('action-translator', () => {
     }
   });
 
+  it('accepts semicolons and code-like text inside type content', () => {
+    const result = translateAgentSAction(
+      "type(content='import pyautogui; pyautogui.click(1,2)')",
+    );
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.normalizedAction).toBe('type');
+      expect(result.parsed.action_inputs).toEqual({
+        content: 'import pyautogui; pyautogui.click(1,2)',
+      });
+    }
+  });
+
   it('returns TRANSLATION_UNSUPPORTED_ACTION for unknown action', () => {
     const result = translateAgentSAction({
       action: 'open_app',
