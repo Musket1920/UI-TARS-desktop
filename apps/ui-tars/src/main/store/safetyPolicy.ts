@@ -7,8 +7,10 @@ import type { LocalStore } from './types';
 export const AGENT_S_SAFE_MAX_STEPS = 200;
 export const AGENT_S_SAFE_DEFAULT_MAX_STEPS = 100;
 export const AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS = 50;
-export const AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS = 3_000;
-export const AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS = 1_000;
+export const AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS = 1_000;
+export const AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS = 3_000;
+export const AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS = 30_000;
+export const AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS = 10_000;
 
 const normalizeBoundedNumber = (
   value: unknown,
@@ -35,9 +37,9 @@ export const enforceAgentSSafetyPolicy = (settings: LocalStore): LocalStore => {
     ),
     loopIntervalInMs: normalizeBoundedNumber(
       settings.loopIntervalInMs,
-      AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
+      AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS,
       AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
-      AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+      AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
     ),
     agentSTurnTimeoutMs: normalizeBoundedNumber(
       settings.agentSTurnTimeoutMs,

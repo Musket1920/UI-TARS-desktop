@@ -4,6 +4,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS,
+  AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
+  AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+  AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+} from '../store/safetyPolicy';
+import {
   AgentSSidecarMode,
   EngineMode,
   LocalStore,
@@ -75,8 +81,8 @@ const createSettings = (overrides: Partial<LocalStore> = {}): LocalStore => ({
   agentSSidecarPort: 11435,
   agentSEnableLocalEnv: false,
   maxLoopCount: 100,
-  loopIntervalInMs: 1000,
-  agentSTurnTimeoutMs: 1000,
+  loopIntervalInMs: AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS,
+  agentSTurnTimeoutMs: AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
   ...overrides,
 });
 
@@ -84,14 +90,23 @@ const unsafeSettings = createSettings({
   agentSEnableLocalEnv: true,
   maxLoopCount: 999,
   loopIntervalInMs: 10_000,
-  agentSTurnTimeoutMs: 10_000,
+  agentSTurnTimeoutMs: 60_000,
 });
 
 const safeSettings = createSettings({
   agentSEnableLocalEnv: false,
   maxLoopCount: 200,
-  loopIntervalInMs: 3000,
-  agentSTurnTimeoutMs: 3000,
+  loopIntervalInMs: AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+  agentSTurnTimeoutMs: AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+});
+
+describe('Agent-S timeout safety constants', () => {
+  it('keeps real Agent-S turns above three seconds by default', () => {
+    expect(AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS).toBe(1_000);
+    expect(AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS).toBe(3_000);
+    expect(AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS).toBe(10_000);
+    expect(AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS).toBe(30_000);
+  });
 });
 
 describe('safety-defaults settings handlers', () => {
@@ -113,8 +128,8 @@ describe('safety-defaults settings handlers', () => {
     expect(setStoreMock.mock.calls[0][0]).toMatchObject({
       agentSEnableLocalEnv: false,
       maxLoopCount: 200,
-      loopIntervalInMs: 3000,
-      agentSTurnTimeoutMs: 3000,
+      loopIntervalInMs: AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+      agentSTurnTimeoutMs: AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
     });
     expect(onSettingsUpdatedMock).not.toHaveBeenCalled();
   });
@@ -133,7 +148,7 @@ describe('safety-defaults settings handlers', () => {
         agentSEnableLocalEnv: true,
         maxLoopCount: 999,
         loopIntervalInMs: 10_000,
-        agentSTurnTimeoutMs: 10_000,
+        agentSTurnTimeoutMs: 60_000,
       }),
     );
 
@@ -146,8 +161,8 @@ describe('safety-defaults settings handlers', () => {
         agentSSidecarPort: 4317,
         agentSEnableLocalEnv: false,
         maxLoopCount: 200,
-        loopIntervalInMs: 3000,
-        agentSTurnTimeoutMs: 3000,
+        loopIntervalInMs: AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+        agentSTurnTimeoutMs: AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
       }),
     );
   });
@@ -163,7 +178,7 @@ describe('safety-defaults settings handlers', () => {
         agentSEnableLocalEnv: true,
         maxLoopCount: 999,
         loopIntervalInMs: 10_000,
-        agentSTurnTimeoutMs: 10_000,
+        agentSTurnTimeoutMs: 60_000,
       }),
     );
 
@@ -178,8 +193,8 @@ describe('safety-defaults settings handlers', () => {
       agentSSidecarPort: 8443,
       agentSEnableLocalEnv: false,
       maxLoopCount: 200,
-      loopIntervalInMs: 3000,
-      agentSTurnTimeoutMs: 3000,
+      loopIntervalInMs: AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+      agentSTurnTimeoutMs: AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
     });
     expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
     expect(onSettingsUpdatedMock).toHaveBeenCalledWith(

@@ -24,8 +24,13 @@ const createSettings = (overrides: Partial<LocalStore> = {}): LocalStore =>
   ({ ...overrides }) as LocalStore;
 
 describe('normalizeTurnTimeoutMs', () => {
+  it('uses a production-safe Agent-S timeout default and max', () => {
+    expect(AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS).toBe(10_000);
+    expect(AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS).toBe(30_000);
+  });
+
   it('clamps the dedicated agentSTurnTimeoutMs within safe bounds', () => {
-    const highTimeout = createSettings({ agentSTurnTimeoutMs: 5_000 });
+    const highTimeout = createSettings({ agentSTurnTimeoutMs: 60_000 });
     expect(normalizeTurnTimeoutMs(highTimeout)).toBe(
       AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
     );
@@ -38,7 +43,7 @@ describe('normalizeTurnTimeoutMs', () => {
 
   it('falls back to the safe default when agentSTurnTimeoutMs is missing', () => {
     const baseline = createSettings({ loopIntervalInMs: 50 });
-    const highLoop = createSettings({ loopIntervalInMs: 5000 });
+    const highLoop = createSettings({ loopIntervalInMs: 30_000 });
 
     expect(normalizeTurnTimeoutMs(baseline)).toBe(
       AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
