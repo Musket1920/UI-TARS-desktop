@@ -27,8 +27,7 @@ export const resolveSidecarEndpoint = (
     const shouldApplyFallbackPort =
       !target.port &&
       fallbackPort > 0 &&
-      (!isHttpOrHttps ||
-        (hasValidPort(rawPort) && isLocalHttpHost(target.hostname)));
+      (!isHttpOrHttps || isLocalHttpHost(target.hostname));
 
     if (shouldApplyFallbackPort) {
       target.port = String(fallbackPort);

@@ -20,6 +20,20 @@ describe('resolveSidecarEndpoint', () => {
     expect(out).toBe('http://example.com');
   });
 
+  it('uses default Agent-S port for local http URL without explicit port', () => {
+    const input = 'http://localhost';
+    const out = resolveSidecarEndpoint(input, undefined);
+
+    expect(out).toBe('http://localhost:10800');
+  });
+
+  it('uses default Agent-S port for local https URL without explicit port', () => {
+    const input = 'https://127.0.0.1/path';
+    const out = resolveSidecarEndpoint(input, undefined);
+
+    expect(out).toBe('https://127.0.0.1:10800/path');
+  });
+
   it('applies explicit custom port override', () => {
     const input = 'http://localhost';
     const out = resolveSidecarEndpoint(input, 5050);
