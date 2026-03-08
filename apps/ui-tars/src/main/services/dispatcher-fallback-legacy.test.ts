@@ -183,20 +183,12 @@ const createAgentSSettings = () => ({
   engineMode: EngineMode.AgentS,
 });
 
-const createStateHandlers = () => {
+const createStateHandlers = (
+  overrides: Partial<ReturnType<typeof getDefaultState>> = {},
+) => {
   let state = {
-    theme: 'dark',
-    ensurePermissions: {},
-    instructions: 'fallback scenario',
-    restUserData: null,
-    status: StatusEnum.INIT,
-    errorMsg: 'agent-s-error',
-    sessionHistoryMessages: [],
-    messages: [],
-    abortController: null,
-    thinking: false,
-    agentSPaused: false,
-    browserAvailable: true,
+    ...getDefaultState(),
+    ...overrides,
   };
 
   const setState = vi.fn((nextState) => {
@@ -208,6 +200,21 @@ const createStateHandlers = () => {
     getState: vi.fn(() => state),
   };
 };
+
+const getDefaultState = () => ({
+  theme: 'dark',
+  ensurePermissions: {},
+  instructions: 'fallback scenario',
+  restUserData: null,
+  status: StatusEnum.INIT,
+  errorMsg: 'agent-s-error',
+  sessionHistoryMessages: [],
+  messages: [],
+  abortController: null,
+  thinking: false,
+  agentSPaused: false,
+  browserAvailable: true,
+});
 
 describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
   beforeEach(() => {
@@ -446,7 +453,10 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
   });
 
   it('does not poison the circuit breaker when Agent-S runtime hits max steps', async () => {
-    const { setState, getState } = createStateHandlers();
+    const { setState, getState } = createStateHandlers({
+      status: StatusEnum.ERROR,
+      errorMsg: 'stale runtime error',
+    });
     sidecarHealthMock.mockResolvedValue({
       state: 'running',
       mode: 'embedded',
@@ -465,6 +475,12 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
         step: 5,
       },
     });
+    guiAgentRunMock.mockImplementationOnce(async () => {
+      expect(getState()).toMatchObject({
+        status: StatusEnum.RUNNING,
+        errorMsg: null,
+      });
+    });
 
     await runAgent(
       setState as unknown as RunAgentSetState,
@@ -476,6 +492,7 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
     expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
     expect(setState).toHaveBeenCalledWith(
       expect.objectContaining({
+        status: StatusEnum.RUNNING,
         errorMsg: null,
       }),
     );

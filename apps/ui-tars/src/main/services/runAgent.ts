@@ -396,6 +396,7 @@ export const runAgent = async (
 
       setState({
         ...getState(),
+        status: StatusEnum.RUNNING,
         errorMsg: null,
       });
       // Fall through to legacy with agentSWasAttempted=true and lifecycle open
