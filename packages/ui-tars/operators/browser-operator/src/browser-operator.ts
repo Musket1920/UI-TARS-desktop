@@ -383,8 +383,20 @@ export class BrowserOperator extends Operator {
 
   private async handleType(inputs: Record<string, any>) {
     const page = await this.getActivePage();
+    const rawContent = inputs.content;
 
-    const content = inputs.content?.trim();
+    if (typeof rawContent !== 'string') {
+      this.logger.warn('No content to type');
+      return;
+    }
+
+    if (rawContent === '') {
+      this.logger.info('Clearing selected content');
+      await page.keyboard.press('Backspace');
+      return;
+    }
+
+    const content = rawContent.trim();
     if (!content) {
       this.logger.warn('No content to type');
       return;
