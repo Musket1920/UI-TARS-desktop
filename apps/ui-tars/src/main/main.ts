@@ -55,10 +55,8 @@ const parseSidecarArgs = (rawArgs: string | undefined): string[] => {
   let activeQuote: '"' | "'" | null = null;
 
   const pushCurrentArg = () => {
-    const trimmedArg = currentArg.trim();
-
-    if (trimmedArg) {
-      args.push(trimmedArg);
+    if (currentArg) {
+      args.push(currentArg);
     }
 
     currentArg = '';

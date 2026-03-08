@@ -89,6 +89,13 @@ describe('parseSidecarArgs', () => {
     ).toEqual(['--flag', 'value with spaces', '--other', 'two words']);
   });
 
+  it('preserves leading and trailing whitespace inside quoted args', () => {
+    expect(parseSidecarArgs("--model-id '  model v2  '")).toEqual([
+      '--model-id',
+      '  model v2  ',
+    ]);
+  });
+
   it('keeps simple unquoted arg strings unchanged', () => {
     expect(parseSidecarArgs('alpha beta  gamma')).toEqual([
       'alpha',
