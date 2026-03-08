@@ -22,6 +22,9 @@ type RunAgentContext = Parameters<
 type PauseRunContext = Parameters<
   typeof agentRoute.pauseRun.handle
 >[0]['context'];
+type RuntimeStatusContext = Parameters<
+  typeof agentRoute.getAgentRuntimeStatus.handle
+>[0]['context'];
 type ResumeRunContext = Parameters<
   typeof agentRoute.resumeRun.handle
 >[0]['context'];
@@ -223,5 +226,46 @@ describe('ipc-agent-regression existing agent routes', () => {
     expect(abortSpy).toHaveBeenCalledTimes(1);
     expect(showWindow).toHaveBeenCalledTimes(1);
     expect(closeScreenMarker).toHaveBeenCalledTimes(1);
+  });
+
+  it('resume restores thinking for a paused active Agent-S run', async () => {
+    store.getState().thinking = true;
+    setAgentSActive(true);
+
+    await agentRoute.pauseRun.handle({
+      input: undefined,
+      context: {} as PauseRunContext,
+    });
+
+    expect(store.getState().agentSPaused).toBe(true);
+    expect(store.getState().thinking).toBe(false);
+
+    await agentRoute.resumeRun.handle({
+      input: undefined,
+      context: {} as ResumeRunContext,
+    });
+
+    expect(store.getState().agentSPaused).toBe(false);
+    expect(store.getState().thinking).toBe(true);
+
+    const runtimeStatus = await agentRoute.getAgentRuntimeStatus.handle({
+      input: undefined,
+      context: {} as RuntimeStatusContext,
+    });
+
+    expect(runtimeStatus).toMatchObject({
+      status: 'running',
+      engine: {
+        active: true,
+        paused: false,
+        thinking: true,
+      },
+      controls: {
+        canRun: false,
+        canPause: true,
+        canResume: false,
+        canStop: true,
+      },
+    });
   });
 });

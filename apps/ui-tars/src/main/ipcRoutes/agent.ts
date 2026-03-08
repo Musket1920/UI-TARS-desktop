@@ -287,16 +287,19 @@ export const agentRoute = t.router({
     const runAgentS = isAgentSActive();
     const agentSPaused = isAgentSPaused();
     const patch: Partial<AppState> = {};
+    const resumedAgentS =
+      !hasGuiAgent && runAgentS && agentSPaused && resumeAgentSRuntime();
 
     if (hasGuiAgent) {
       guiAgent.resume();
     }
 
-    if (!hasGuiAgent && runAgentS && agentSPaused && resumeAgentSRuntime()) {
+    if (resumedAgentS) {
       patch.agentSPaused = false;
+      patch.thinking = true;
     }
 
-    if (hasGuiAgent || thinking) {
+    if (!resumedAgentS && (hasGuiAgent || thinking)) {
       patch.thinking = false;
     }
 
