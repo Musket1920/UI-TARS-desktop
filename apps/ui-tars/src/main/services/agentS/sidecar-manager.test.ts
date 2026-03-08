@@ -158,6 +158,54 @@ describe('sidecar-manager', () => {
     expect(child.killed).toBe(true);
   });
 
+  it('labels startup fetch failures as startup_failed before timing out', async () => {
+    const child = new MockChildProcess(3300);
+    const startupProbe = createDeferred<Response>();
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => startupProbe.promise)
+      .mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const startPromise = manager.start({
+      mode: 'embedded',
+      command: 'python',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9150',
+      startupTimeoutMs: 600,
+      startupPollIntervalMs: 100,
+      shutdownTimeoutMs: 200,
+      healthTimeoutMs: 200,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    startupProbe.reject(new Error('connect ECONNREFUSED'));
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const startupStatus = manager.getStatus();
+    expect(startupStatus.state).toBe('starting');
+    expect(startupStatus.healthy).toBe(false);
+    expect(startupStatus.reason).toBe('startup_failed');
+    expect(startupStatus.reason).not.toBe('heartbeat_failed');
+    expect(startupStatus.error).toContain('connect ECONNREFUSED');
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    const finalStatus = await startPromise;
+
+    expect(finalStatus.state).toBe('timeout');
+    expect(finalStatus.reason).toBe('startup_timeout');
+    expect(child.killed).toBe(true);
+  });
+
   it('marks running sidecar unhealthy when heartbeat check fails', async () => {
     const child = new MockChildProcess(4500);
     const spawnMock = vi.fn<SpawnFunction>(

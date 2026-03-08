@@ -151,6 +151,8 @@ type HealthProbeResult = {
   error?: string;
 };
 
+type HealthProbeContext = 'probe' | 'startup' | 'heartbeat';
+
 const DEFAULT_STARTUP_TIMEOUT_MS = 12_000;
 const DEFAULT_STARTUP_POLL_INTERVAL_MS = 250;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 5_000;
@@ -814,7 +816,7 @@ export class AgentSSidecarManager {
         }
       }
 
-      const probe = await this.probeHealth(config);
+      const probe = await this.probeHealth(config, 'startup');
       if (lifecycleMarker !== this.lifecycleToken) {
         return this.getStatus();
       }
@@ -889,7 +891,7 @@ export class AgentSSidecarManager {
 
       this.heartbeatInFlight = true;
       try {
-        const probe = await this.probeHealth(config);
+        const probe = await this.probeHealth(config, 'heartbeat');
         if (lifecycleMarker !== this.lifecycleToken) {
           return;
         }
@@ -933,6 +935,7 @@ export class AgentSSidecarManager {
 
   private async probeHealth(
     config: SidecarStartConfig,
+    context: HealthProbeContext = 'probe',
   ): Promise<HealthProbeResult> {
     const checkedAt = this.deps.now();
 
@@ -1008,7 +1011,7 @@ export class AgentSSidecarManager {
       return {
         healthy: false,
         checkedAt,
-        reason: 'heartbeat_failed',
+        reason: context === 'startup' ? 'startup_failed' : 'heartbeat_failed',
         error: error instanceof Error ? error.message : String(error),
       };
     } finally {
