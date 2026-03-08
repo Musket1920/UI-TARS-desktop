@@ -18,27 +18,48 @@ const flushResumeWaiters = () => {
 };
 
 const waitForResume = async (signal?: AbortSignal) => {
-  if (!lifecycleState.paused) {
+  if (!lifecycleState.paused || signal?.aborted) {
     return;
   }
 
   await new Promise<void>((resolve) => {
-    const listener = () => {
+    let settled = false;
+
+    const cleanup = () => {
       resumeWaiters.delete(listener);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
       resolve();
     };
 
+    const listener = () => {
+      finish();
+    };
+
+    const onAbort = () => {
+      finish();
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    if (!lifecycleState.paused || signal?.aborted) {
+      finish();
+      return;
+    }
+
     resumeWaiters.add(listener);
 
-    signal?.addEventListener(
-      'abort',
-      () => {
-        if (resumeWaiters.delete(listener)) {
-          resolve();
-        }
-      },
-      { once: true },
-    );
+    if (!lifecycleState.paused || signal?.aborted) {
+      finish();
+    }
   });
 };
 
