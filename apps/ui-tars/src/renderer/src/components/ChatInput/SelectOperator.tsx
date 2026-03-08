@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useEffect, useCallback, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Button } from '@renderer/components/ui/button';
 import {
   ChevronDown,
@@ -33,6 +33,11 @@ import {
 } from '@renderer/components/ui/tooltip';
 import { EngineMode, Operator } from '@main/store/types';
 
+import { createAgentSStatusPoller } from './agentSStatusPolling';
+
+type AgentSHealth = Awaited<ReturnType<typeof api.getAgentSHealth>>;
+type AgentRuntimeStatus = Awaited<ReturnType<typeof api.getAgentRuntimeStatus>>;
+
 const getOperatorIcon = (type: string) => {
   switch (type) {
     case 'nutjs':
@@ -58,12 +63,10 @@ const getOperatorLabel = (type: string) => {
 export const SelectOperator = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
-  const [health, setHealth] = useState<Awaited<
-    ReturnType<typeof api.getAgentSHealth>
-  > | null>(null);
-  const [runtimeStatus, setRuntimeStatus] = useState<Awaited<
-    ReturnType<typeof api.getAgentRuntimeStatus>
-  > | null>(null);
+  const [health, setHealth] = useState<AgentSHealth | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<AgentRuntimeStatus | null>(
+    null,
+  );
   const [loadingStatus, setLoadingStatus] = useState(false);
 
   const { settings, updateSetting } = useSetting();
@@ -77,29 +80,6 @@ export const SelectOperator = () => {
     : Operator.LocalComputer;
 
   const isAgentSSelected = settings.engineMode === EngineMode.AgentS;
-
-  const fetchStatus = useCallback(async () => {
-    if (!isAgentSSelected) {
-      setHealth(null);
-      setRuntimeStatus(null);
-      return;
-    }
-    try {
-      setLoadingStatus(true);
-      const [healthPayload, runtimePayload] = await Promise.all([
-        api.getAgentSHealth(),
-        api.getAgentRuntimeStatus(),
-      ]);
-      setHealth(healthPayload);
-      setRuntimeStatus(runtimePayload);
-    } catch (error) {
-      console.error('Failed to poll Agent-S status', error);
-      setHealth(null);
-      setRuntimeStatus(null);
-    } finally {
-      setLoadingStatus(false);
-    }
-  }, [isAgentSSelected]);
 
   // If the current setting is browser but the browser
   // is not available, automatically switched to COMPUTER OPERATOR mode.
@@ -116,13 +96,39 @@ export const SelectOperator = () => {
   }, [browserAvailable, settings, updateSetting]);
 
   useEffect(() => {
-    void fetchStatus();
+    const poller = createAgentSStatusPoller<AgentSHealth, AgentRuntimeStatus>({
+      isSelected: () => isAgentSSelected,
+      setLoadingStatus,
+      setStatus: ({ health: nextHealth, runtimeStatus: nextRuntimeStatus }) => {
+        setHealth(nextHealth);
+        setRuntimeStatus(nextRuntimeStatus);
+      },
+      fetchStatus: async () => {
+        const [healthPayload, runtimePayload] = await Promise.all([
+          api.getAgentSHealth(),
+          api.getAgentRuntimeStatus(),
+        ]);
+
+        return {
+          health: healthPayload,
+          runtimeStatus: runtimePayload,
+        };
+      },
+      onPollError: (error) => {
+        console.error('Failed to poll Agent-S status', error);
+      },
+    });
+
+    void poller.poll();
     const timer = setInterval(() => {
-      void fetchStatus();
+      void poller.poll();
     }, 15000);
 
-    return () => clearInterval(timer);
-  }, [fetchStatus]);
+    return () => {
+      poller.stop();
+      clearInterval(timer);
+    };
+  }, [isAgentSSelected]);
 
   const handleSelect = (type: Operator) => {
     if (type === Operator.LocalBrowser && !browserAvailable) {
