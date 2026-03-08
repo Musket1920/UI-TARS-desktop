@@ -145,6 +145,101 @@ describe('sidecar-manager', () => {
     expect(status.reason).toBeUndefined();
   });
 
+  it('allows path-qualified python embedded launcher through the allowlist', async () => {
+    const child = new MockChildProcess(5555);
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ healthy: true }),
+    } as Response);
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const status = await manager.start({
+      mode: 'embedded',
+      command: './venv/bin/python',
+      args: ['-m', 'agent_s'],
+      endpoint: 'http://127.0.0.1:9700',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(status.state).toBe('running');
+    expect(status.mode).toBe('embedded');
+    expect(status.pid).toBe(5555);
+    expect(status.healthy).toBe(true);
+    expect(status.reason).toBeUndefined();
+  });
+
+  it('still requires path-qualified python launchers to use -m agent_s', async () => {
+    const spawnMock = vi.fn<SpawnFunction>();
+    const fetchMock = vi.fn<typeof fetch>();
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const status = await manager.start({
+      mode: 'embedded',
+      command: './venv/bin/python3',
+      args: ['agent_s'],
+      endpoint: 'http://127.0.0.1:9701',
+      startupTimeoutMs: 500,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(status.state).toBe('unhealthy');
+    expect(status.healthy).toBe(false);
+    expect(status.reason).toBe('startup_failed');
+    expect(status.error).toBe(
+      'Embedded Python sidecar command must launch agent_s via -m agent_s',
+    );
+  });
+
+  it('rejects path-qualified embedded launchers outside the allowlist', async () => {
+    const spawnMock = vi.fn<SpawnFunction>();
+    const fetchMock = vi.fn<typeof fetch>();
+
+    const manager = new AgentSSidecarManager({
+      spawn: spawnMock,
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const status = await manager.start({
+      mode: 'embedded',
+      command: '/usr/local/bin/bash',
+      args: ['-c', 'echo', 'blocked'],
+      endpoint: 'http://127.0.0.1:9800',
+      startupTimeoutMs: 500,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(status.state).toBe('unhealthy');
+    expect(status.healthy).toBe(false);
+    expect(status.reason).toBe('startup_failed');
+  });
+
   it('returns timeout state when startup never becomes healthy', async () => {
     const child = new MockChildProcess(3200);
     const spawnMock = vi.fn<SpawnFunction>(
@@ -1062,8 +1157,8 @@ describe('sidecar-manager', () => {
       args: ['-m', 'pip'],
     },
     {
-      name: 'path-based launcher',
-      command: './agent_s',
+      name: 'path-based denied launcher',
+      command: './launcher',
       args: [],
     },
   ])(

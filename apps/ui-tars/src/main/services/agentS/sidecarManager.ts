@@ -178,14 +178,32 @@ const stripUnsafeLocalEnvArgs = (args: string[] = []): string[] => {
   });
 };
 
+const getEmbeddedLauncherName = (command: string): string | null => {
+  const trimmedCommand = command.trim().replace(/[\\/]+$/, '');
+  if (trimmedCommand.length === 0) {
+    return null;
+  }
+
+  const launcherName = trimmedCommand
+    .split(/[\\/]/)
+    .at(-1)
+    ?.trim()
+    .toLowerCase();
+
+  if (!launcherName || !EMBEDDED_LAUNCHER_NAME_PATTERN.test(launcherName)) {
+    return null;
+  }
+
+  return launcherName;
+};
+
 const validateEmbeddedLauncher = (
   command: string,
   args: string[] = [],
 ): string | null => {
-  const normalizedCommand = command.trim().toLowerCase();
+  const normalizedCommand = getEmbeddedLauncherName(command);
   if (
-    normalizedCommand.length === 0 ||
-    !EMBEDDED_LAUNCHER_NAME_PATTERN.test(normalizedCommand) ||
+    normalizedCommand === null ||
     !ALLOWED_EMBEDDED_LAUNCHERS.has(normalizedCommand)
   ) {
     return 'Embedded sidecar command must be agent_s, python -m agent_s, or python3 -m agent_s';
