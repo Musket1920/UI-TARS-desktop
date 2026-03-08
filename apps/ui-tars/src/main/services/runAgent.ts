@@ -286,6 +286,16 @@ export const runAgent = async (
     !!sidecarHealthStatus.endpoint;
 
   let agentSWasAttempted = false;
+  let agentSRunLifecycleClosed = false;
+
+  const closeAgentSRunLifecycleIfNeeded = () => {
+    if (!agentSWasAttempted || agentSRunLifecycleClosed) {
+      return;
+    }
+
+    afterAgentRun(settings.operator);
+    agentSRunLifecycleClosed = true;
+  };
 
   try {
     if (runCorrelation) {
@@ -331,7 +341,7 @@ export const runAgent = async (
       );
 
       if (runtimeResult.status !== StatusEnum.ERROR) {
-        afterAgentRun(settings.operator);
+        closeAgentSRunLifecycleIfNeeded();
         agentSSidecarManager.recordCircuitSuccess({ source: 'runtime' });
 
         if (runCorrelation) {
@@ -583,7 +593,11 @@ export const runAgent = async (
       's',
     );
 
-    afterAgentRun(settings.operator);
+    if (agentSWasAttempted) {
+      closeAgentSRunLifecycleIfNeeded();
+    } else {
+      afterAgentRun(settings.operator);
+    }
 
     if (runCorrelation && isAgentSMode) {
       agentSSidecarManager.setTelemetryCorrelation({
@@ -593,6 +607,9 @@ export const runAgent = async (
     }
   } catch (e) {
     logger.error('[runAgent try-catch error]', e);
+
+    closeAgentSRunLifecycleIfNeeded();
+
     throw e;
   }
 };

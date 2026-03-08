@@ -415,6 +415,47 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
     });
   });
 
+  it('closes lifecycle once when legacy fallback setup throws after Agent-S attempt', async () => {
+    const { setState, getState } = createStateHandlers();
+    sidecarHealthMock.mockResolvedValue({
+      state: 'running',
+      mode: 'embedded',
+      healthy: true,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 777,
+      checkedAt: 1_000,
+      lastHeartbeatAt: 1_000,
+    });
+    runAgentSRuntimeLoopMock.mockResolvedValue({
+      status: StatusEnum.ERROR,
+      stepsExecuted: 0,
+      error: {
+        code: 'AGENT_S_PREDICTION_MALFORMED',
+        message: 'malformed',
+        step: 1,
+      },
+    });
+    guiAgentCtorMock.mockImplementationOnce(() => {
+      throw new Error('legacy fallback setup failed');
+    });
+
+    await expect(
+      runAgent(
+        setState as unknown as RunAgentSetState,
+        getState as unknown as RunAgentGetState,
+      ),
+    ).rejects.toThrow('legacy fallback setup failed');
+
+    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentRunMock).not.toHaveBeenCalled();
+
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+  });
+
   it('circuit-breaker-open bypasses Agent-S and routes directly to legacy', async () => {
     const { setState, getState } = createStateHandlers();
     sidecarGetCircuitBreakerStatusMock.mockReturnValueOnce({
