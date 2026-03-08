@@ -409,15 +409,6 @@ export const runAgentSRuntimeLoop = async (
       config: redactSensitiveConfig(providerConfig),
     });
 
-    appendState(args.setState, args.getState, {
-      status: StatusEnum.RUNNING,
-      restUserData: buildRuntimeMeta({
-        instruction: args.instruction,
-        modelName: providerConfig.model,
-        now: deps.now(),
-      }),
-    });
-
     const sidecarStatus = await deps.sidecarManager.health({ probe: true });
     if (!sidecarStatus.healthy || !sidecarStatus.endpoint) {
       throw runtimeError(
@@ -430,6 +421,15 @@ export const runAgentSRuntimeLoop = async (
         sidecarStatus,
       );
     }
+
+    appendState(args.setState, args.getState, {
+      status: StatusEnum.RUNNING,
+      restUserData: buildRuntimeMeta({
+        instruction: args.instruction,
+        modelName: providerConfig.model,
+        now: deps.now(),
+      }),
+    });
 
     setAgentSActive(true);
 

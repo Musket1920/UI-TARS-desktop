@@ -149,7 +149,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     setAgentSActive(false);
   });
 
-  it('sets active only after sidecar preflight succeeds and clears it after a successful run', async () => {
+  it('sets RUNNING and active only after sidecar preflight succeeds, then clears active after a successful run', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();
     const sidecarManager = createDeferredHealthSidecarManager();
@@ -203,11 +203,15 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     });
 
     expect(isAgentSActive()).toBe(false);
+    expect(history.map((state) => state.status)).not.toContain(
+      StatusEnum.RUNNING,
+    );
 
     sidecarManager.resolveHealth();
     await flushMicrotasks();
 
     expect(isAgentSActive()).toBe(true);
+    expect(history[0]?.status).toBe(StatusEnum.RUNNING);
 
     deferredFetch.resolve();
 
@@ -257,6 +261,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(result.error?.step).toBe(0);
     expect(operator.screenshot).not.toHaveBeenCalled();
     expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.map((state) => state.status)).toEqual([StatusEnum.ERROR]);
     expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
       true,
     );
@@ -324,6 +329,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(sidecarManager.health).not.toHaveBeenCalled();
     expect(operator.screenshot).not.toHaveBeenCalled();
     expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.map((state) => state.status)).toEqual([StatusEnum.ERROR]);
     expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
       true,
     );
