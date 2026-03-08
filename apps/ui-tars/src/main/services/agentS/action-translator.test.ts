@@ -116,6 +116,24 @@ describe('action-translator', () => {
     }
   });
 
+  it('accepts commas inside double-quoted type text but still rejects top-level multi-statements', () => {
+    const valid = translateAgentSAction('type(text="hello, world")');
+    const invalid = translateAgentSAction('type(text="hello, world"); wait()');
+
+    expect(valid.ok).toBe(true);
+    expect(invalid.ok).toBe(false);
+
+    if (valid.ok) {
+      expect(valid.normalizedAction).toBe('type');
+      expect(valid.parsed.action_inputs).toEqual({ content: 'hello, world' });
+    }
+
+    if (!invalid.ok) {
+      expect(invalid.code).toBe('TRANSLATION_MALFORMED_INPUT');
+      expect(invalid.message).toBe('Only single action calls are supported');
+    }
+  });
+
   it('returns TRANSLATION_UNSUPPORTED_ACTION for unknown action', () => {
     const result = translateAgentSAction({
       action: 'open_app',

@@ -173,7 +173,7 @@ const parseArgs = (
     return args;
   }
 
-  const pairs = rawArgs.match(/([^,']|'[^']*')+/g) ?? [];
+  const pairs = rawArgs.match(/([^,'"]|"[^"]*"|'[^']*')+/g) ?? [];
 
   for (const pair of pairs) {
     const equalIndex = pair.indexOf('=');
