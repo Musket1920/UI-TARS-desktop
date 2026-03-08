@@ -1,23 +1,27 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ModuleKind, ScriptTarget, transpileModule } from 'typescript';
 
 type ParseSidecarArgs = (rawArgs: string | undefined) => string[];
+type StartAgentSSidecarInBackground = (
+  startSidecar?: () => Promise<void>,
+  logError?: (message: string, error: unknown) => void,
+) => void;
 
-const extractParseSidecarArgs = (): ParseSidecarArgs => {
+const extractConstArrowFunction = <T>(name: string): T => {
   const source = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
-  const signature = 'const parseSidecarArgs =';
+  const signature = `const ${name} =`;
   const start = source.indexOf(signature);
 
   if (start === -1) {
-    throw new Error('Could not find parseSidecarArgs in main.ts');
+    throw new Error(`Could not find ${name} in main.ts`);
   }
 
   const bodyStart = source.indexOf('{', start);
 
   if (bodyStart === -1) {
-    throw new Error('Could not find parseSidecarArgs body start');
+    throw new Error(`Could not find ${name} body start`);
   }
 
   let depth = 0;
@@ -42,28 +46,39 @@ const extractParseSidecarArgs = (): ParseSidecarArgs => {
   }
 
   if (bodyEnd === -1) {
-    throw new Error('Could not find parseSidecarArgs body end');
+    throw new Error(`Could not find ${name} body end`);
   }
 
   const statementEnd = source.indexOf(';', bodyEnd);
 
   if (statementEnd === -1) {
-    throw new Error('Could not find parseSidecarArgs statement end');
+    throw new Error(`Could not find ${name} statement end`);
   }
 
-  const snippet = `${source.slice(start, statementEnd + 1)}\nmodule.exports = { parseSidecarArgs };`;
+  const snippet = `${source.slice(start, statementEnd + 1)}\nmodule.exports = { ${name} };`;
   const transpiled = transpileModule(snippet, {
     compilerOptions: {
       module: ModuleKind.CommonJS,
       target: ScriptTarget.ES2020,
     },
   }).outputText;
-  const module = { exports: {} as { parseSidecarArgs: ParseSidecarArgs } };
+  const module = { exports: {} as Record<string, T> };
 
   new Function('module', 'exports', transpiled)(module, module.exports);
 
-  return module.exports.parseSidecarArgs;
+  return module.exports[name];
 };
+
+const extractParseSidecarArgs = (): ParseSidecarArgs => {
+  return extractConstArrowFunction<ParseSidecarArgs>('parseSidecarArgs');
+};
+
+const extractStartAgentSSidecarInBackground =
+  (): StartAgentSSidecarInBackground => {
+    return extractConstArrowFunction<StartAgentSSidecarInBackground>(
+      'startAgentSSidecarInBackground',
+    );
+  };
 
 describe('parseSidecarArgs', () => {
   const parseSidecarArgs = extractParseSidecarArgs();
@@ -88,5 +103,48 @@ describe('parseSidecarArgs', () => {
       '--message',
       'say "hi"',
     ]);
+  });
+});
+
+describe('startAgentSSidecarInBackground', () => {
+  const startAgentSSidecarInBackground =
+    extractStartAgentSSidecarInBackground();
+
+  it('starts sidecar work without waiting for readiness', async () => {
+    let resolveStartup!: () => void;
+    let settled = false;
+    const startupPromise = new Promise<void>((resolve) => {
+      resolveStartup = resolve;
+    }).finally(() => {
+      settled = true;
+    });
+    const startSidecar = vi.fn(() => startupPromise);
+    const logError = vi.fn();
+
+    startAgentSSidecarInBackground(startSidecar, logError);
+
+    expect(startSidecar).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+    expect(logError).not.toHaveBeenCalled();
+
+    resolveStartup();
+    await startupPromise;
+    expect(settled).toBe(true);
+  });
+
+  it('logs startup errors from the background task', async () => {
+    const error = new Error('sidecar failed');
+    const startSidecar = vi.fn(async () => {
+      throw error;
+    });
+    const logError = vi.fn();
+
+    startAgentSSidecarInBackground(startSidecar, logError);
+    await Promise.resolve();
+
+    expect(logError).toHaveBeenCalledWith(
+      '[agentS sidecar] failed to start during app initialization',
+      error,
+    );
   });
 });

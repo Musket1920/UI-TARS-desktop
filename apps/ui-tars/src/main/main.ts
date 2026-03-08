@@ -172,6 +172,18 @@ const startAgentSSidecarIfNeeded = async (
   });
 };
 
+const startAgentSSidecarInBackground = (
+  startSidecar: () => Promise<void> = startAgentSSidecarIfNeeded,
+  logError: typeof logger.error = logger.error,
+) => {
+  void startSidecar().catch((error) => {
+    logError(
+      '[agentS sidecar] failed to start during app initialization',
+      error,
+    );
+  });
+};
+
 // 在应用初始化之前启用辅助功能支持
 app.commandLine.appendSwitch('force-renderer-accessibility');
 
@@ -319,7 +331,7 @@ const initializeApp = async () => {
     }
   }
 
-  await startAgentSSidecarIfNeeded();
+  startAgentSSidecarInBackground();
 };
 
 /**
