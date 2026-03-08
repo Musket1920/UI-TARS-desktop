@@ -136,6 +136,15 @@ describe('agent-s-lifecycle pause/resume/stop parity', () => {
   it('stopRun aborts controller and resets status with cleanup', async () => {
     const fakeAbortController = new AbortController();
     const abortSpy = vi.spyOn(fakeAbortController, 'abort');
+    const events: string[] = [];
+
+    abortSpy.mockImplementation(() => {
+      events.push('abort');
+    });
+    vi.mocked(store.setState).mockImplementation((patch) => {
+      events.push('setState');
+      Object.assign(store.getState(), patch);
+    });
     store.getState().abortController = fakeAbortController;
 
     await agentRoute.stopRun.handle({
@@ -150,6 +159,7 @@ describe('agent-s-lifecycle pause/resume/stop parity', () => {
       agentSPaused: false,
     });
     expect(abortSpy).toHaveBeenCalledTimes(1);
+    expect(events).toEqual(['abort', 'setState']);
     expect(showWindow).toHaveBeenCalledTimes(1);
     expect(closeScreenMarker).toHaveBeenCalledTimes(1);
   });

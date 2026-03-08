@@ -319,6 +319,7 @@ export const agentRoute = t.router({
     const { abortController } = store.getState();
     resetAgentSLifecycle();
     setAgentSActive(false);
+    abortController?.abort();
     store.setState({
       status: StatusEnum.END,
       thinking: false,
@@ -327,7 +328,6 @@ export const agentRoute = t.router({
 
     showWindow();
 
-    abortController?.abort();
     const guiAgent = GUIAgentManager.getInstance().getAgent();
     if (guiAgent instanceof GUIAgent) {
       guiAgent.resume();
