@@ -27,6 +27,19 @@ describe('resolveSidecarEndpoint', () => {
     expect(out).toBe('http://localhost:5050');
   });
 
+  it('keeps remote https URL default port semantics when rawPort is set', () => {
+    const input = 'https://example.com/path';
+    const out = resolveSidecarEndpoint(input, 5050);
+
+    expect(out).toBe('https://example.com/path');
+  });
+
+  it('uses configured port for blank URL fallback', () => {
+    const out = resolveSidecarEndpoint('', 5050);
+
+    expect(out).toBe('http://127.0.0.1:5050');
+  });
+
   it('falls back to localhost default when URL is blank', () => {
     const out = resolveSidecarEndpoint('', undefined);
 
