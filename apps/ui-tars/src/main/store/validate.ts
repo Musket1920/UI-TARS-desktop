@@ -5,6 +5,7 @@
 import { z } from 'zod';
 
 import {
+  AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
   AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
   AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
 } from './safetyPolicy';
@@ -39,7 +40,7 @@ export const PresetSchema = z.object({
   loopIntervalInMs: z
     .number()
     .min(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS)
-    .max(3000)
+    .max(AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS)
     .optional(),
   agentSTurnTimeoutMs: z
     .number()
