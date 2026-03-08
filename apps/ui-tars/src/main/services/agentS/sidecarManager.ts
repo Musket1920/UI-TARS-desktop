@@ -160,6 +160,7 @@ export const DEFAULT_HEALTH_TIMEOUT_MS = 2_000;
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 3_000;
 const DEFAULT_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5;
 const DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MS = 20_000;
+const DEFAULT_HEALTH_PATH = '/health';
 
 const MIN_TIMEOUT_MS = 50;
 const MIN_INTERVAL_MS = 100;
@@ -316,17 +317,29 @@ const createInitialStatus = (): SidecarStatus => ({
   reason: 'stop_requested',
 });
 
-const resolveHealthUrl = (endpoint: string, healthPath = '/health') => {
+const resolveHealthUrl = (
+  endpoint: string,
+  healthPath = DEFAULT_HEALTH_PATH,
+) => {
   const parsed = new URL(endpoint);
-  if (parsed.pathname.endsWith('/health')) {
-    return parsed.toString();
-  }
-
   const normalizedPath = healthPath.startsWith('/')
     ? healthPath
     : `/${healthPath}`;
-  const pathname = parsed.pathname.replace(/\/$/, '');
-  parsed.pathname = pathname ? `${pathname}${normalizedPath}` : normalizedPath;
+
+  if (
+    parsed.pathname.endsWith(DEFAULT_HEALTH_PATH) &&
+    normalizedPath === DEFAULT_HEALTH_PATH
+  ) {
+    return parsed.toString();
+  }
+
+  const pathname = parsed.pathname.endsWith(DEFAULT_HEALTH_PATH)
+    ? parsed.pathname.slice(0, -DEFAULT_HEALTH_PATH.length)
+    : parsed.pathname;
+  const normalizedBasePath = pathname.replace(/\/$/, '');
+  parsed.pathname = normalizedBasePath
+    ? `${normalizedBasePath}${normalizedPath}`
+    : normalizedPath;
 
   return parsed.toString();
 };

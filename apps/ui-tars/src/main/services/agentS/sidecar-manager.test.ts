@@ -321,6 +321,53 @@ describe('sidecar-manager', () => {
     expect(probed.healthy).toBe(true);
   });
 
+  it('keeps default /health endpoints unchanged but honors explicit custom health paths', async () => {
+    const defaultFetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createHealthyResponse({ status: 'running' }));
+    const customFetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createHealthyResponse({ status: 'running' }));
+
+    const defaultManager = new AgentSSidecarManager({
+      spawn: vi.fn() as SpawnFunction,
+      fetch: defaultFetchMock,
+      now: () => Date.now(),
+    });
+    const customManager = new AgentSSidecarManager({
+      spawn: vi.fn() as SpawnFunction,
+      fetch: customFetchMock,
+      now: () => Date.now(),
+    });
+
+    await defaultManager.start({
+      mode: 'external',
+      endpoint: 'http://127.0.0.1:9800/health',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+    await customManager.start({
+      mode: 'external',
+      endpoint: 'http://127.0.0.1:9801/health',
+      healthPath: '/readyz',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 500,
+      healthTimeoutMs: 300,
+    });
+
+    expect(defaultFetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:9800/health',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(customFetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:9801/readyz',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
   it('restart clears old child reference and starts a new process', async () => {
     const firstChild = new MockChildProcess(1111);
     const secondChild = new MockChildProcess(2222);
