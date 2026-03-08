@@ -91,6 +91,7 @@ import {
   createSettledAgentSFieldPersistScheduler,
   getAgentSPersistEffectInputs,
   getPersistedAgentSFormValues,
+  shouldResetAgentSFormValues,
 } from './engine';
 
 const createDeferred = <T>() => {
@@ -192,6 +193,53 @@ describe('Agent-S settings persist effect inputs', () => {
     });
 
     expect(externalAgentSChange).not.toEqual(baseInputs);
+  });
+});
+
+describe('shouldResetAgentSFormValues', () => {
+  const previousPersistedValues = {
+    engineMode: EngineMode.AgentS,
+    agentSSidecarMode: AgentSSidecarMode.Embedded,
+    agentSSidecarUrl: '',
+    agentSSidecarPort: '',
+  };
+
+  it('skips reset when a local sidecar mode persist arrives before URL and port settle', () => {
+    expect(
+      shouldResetAgentSFormValues({
+        previousPersistedValues,
+        nextPersistedValues: {
+          ...previousPersistedValues,
+          agentSSidecarMode: AgentSSidecarMode.Remote,
+        },
+        pendingLocallyPersistedValues: {
+          engineMode: EngineMode.AgentS,
+          agentSSidecarMode: AgentSSidecarMode.Remote,
+          agentSSidecarUrl: 'https://draft-sidecar.example.com',
+          agentSSidecarPort: '65432',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('resets when persisted Agent-S fields change externally', () => {
+    expect(
+      shouldResetAgentSFormValues({
+        previousPersistedValues,
+        nextPersistedValues: {
+          engineMode: EngineMode.AgentS,
+          agentSSidecarMode: AgentSSidecarMode.Remote,
+          agentSSidecarUrl: 'https://external-sidecar.example.com',
+          agentSSidecarPort: '60000',
+        },
+        pendingLocallyPersistedValues: {
+          engineMode: EngineMode.AgentS,
+          agentSSidecarMode: AgentSSidecarMode.Remote,
+          agentSSidecarUrl: 'https://draft-sidecar.example.com',
+          agentSSidecarPort: '65432',
+        },
+      }),
+    ).toBe(true);
   });
 });
 

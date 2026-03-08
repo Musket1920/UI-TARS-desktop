@@ -79,6 +79,13 @@ type AgentSPersistEffectInputs = PersistedAgentSFormValues & {
   hasPersistedSettings: boolean;
 };
 
+const PERSISTED_AGENT_S_FORM_FIELDS = [
+  'engineMode',
+  'agentSSidecarMode',
+  'agentSSidecarUrl',
+  'agentSSidecarPort',
+] as const;
+
 const HEALTH_BADGE_VARIANT: Record<
   AgentSHealthPayload['status'],
   'default' | 'destructive' | 'outline' | 'secondary'
@@ -107,7 +114,7 @@ const toPersistedSidecarPort = (
 };
 
 export const getPersistedAgentSFormValues = (
-  settings: LocalStore,
+  settings: Partial<LocalStore>,
 ): PersistedAgentSFormValues => {
   return {
     engineMode: settings.engineMode ?? EngineMode.UITARS,
@@ -121,6 +128,49 @@ export const getAgentSPersistEffectInputs = (
   inputs: AgentSPersistEffectInputs,
 ): AgentSPersistEffectInputs => {
   return inputs;
+};
+
+const hasMatchingPersistedAgentSFormValues = (
+  left: PersistedAgentSFormValues,
+  right: PersistedAgentSFormValues,
+) => {
+  return PERSISTED_AGENT_S_FORM_FIELDS.every(
+    (field) => left[field] === right[field],
+  );
+};
+
+export const shouldResetAgentSFormValues = ({
+  previousPersistedValues,
+  nextPersistedValues,
+  pendingLocallyPersistedValues,
+}: {
+  previousPersistedValues: PersistedAgentSFormValues | null;
+  nextPersistedValues: PersistedAgentSFormValues;
+  pendingLocallyPersistedValues: PersistedAgentSFormValues | null;
+}) => {
+  if (previousPersistedValues === null) {
+    return true;
+  }
+
+  const changedPersistedFields = PERSISTED_AGENT_S_FORM_FIELDS.filter(
+    (field) => previousPersistedValues[field] !== nextPersistedValues[field],
+  );
+
+  if (changedPersistedFields.length === 0) {
+    return false;
+  }
+
+  if (
+    pendingLocallyPersistedValues &&
+    changedPersistedFields.every(
+      (field) =>
+        pendingLocallyPersistedValues[field] === nextPersistedValues[field],
+    )
+  ) {
+    return false;
+  }
+
+  return true;
 };
 
 const AGENT_S_FIELD_PERSIST_DELAY_MS = 300;
@@ -245,6 +295,10 @@ export const createAgentSStatusLoader = <THealth, TRuntimeStatus>({
 export function EngineSettings({ className }: { className?: string }) {
   const { settings, updateSetting } = useSetting();
   const latestSettingsRef = useRef(settings);
+  const previousPersistedAgentSFormValuesRef =
+    useRef<PersistedAgentSFormValues | null>(null);
+  const pendingLocallyPersistedAgentSFormValuesRef =
+    useRef<PersistedAgentSFormValues | null>(null);
   const [health, setHealth] = useState<AgentSHealthPayload | null>(null);
   const [runtimeStatus, setRuntimeStatus] =
     useState<AgentRuntimeStatusPayload | null>(null);
@@ -319,6 +373,8 @@ export function EngineSettings({ className }: { className?: string }) {
       };
 
       latestSettingsRef.current = nextSettings;
+      pendingLocallyPersistedAgentSFormValuesRef.current =
+        getPersistedAgentSFormValues(nextSettings);
       updateSetting(nextSettings);
     },
     [updateSetting],
@@ -359,8 +415,33 @@ export function EngineSettings({ className }: { className?: string }) {
   );
 
   useEffect(() => {
-    if (hasPersistedSettings) {
+    if (!hasPersistedSettings) {
+      previousPersistedAgentSFormValuesRef.current = null;
+      pendingLocallyPersistedAgentSFormValuesRef.current = null;
+      return;
+    }
+
+    if (
+      shouldResetAgentSFormValues({
+        previousPersistedValues: previousPersistedAgentSFormValuesRef.current,
+        nextPersistedValues: persistedAgentSFormValues,
+        pendingLocallyPersistedValues:
+          pendingLocallyPersistedAgentSFormValuesRef.current,
+      })
+    ) {
       form.reset(persistedAgentSFormValues);
+    }
+
+    previousPersistedAgentSFormValuesRef.current = persistedAgentSFormValues;
+
+    if (
+      pendingLocallyPersistedAgentSFormValuesRef.current &&
+      hasMatchingPersistedAgentSFormValues(
+        pendingLocallyPersistedAgentSFormValuesRef.current,
+        persistedAgentSFormValues,
+      )
+    ) {
+      pendingLocallyPersistedAgentSFormValuesRef.current = null;
     }
   }, [hasPersistedSettings, persistedAgentSFormValues, form]);
 
