@@ -56,7 +56,9 @@ export class SettingStore {
             (newValue as LocalStore).agentSEnableLocalEnv ||
           safeValue.maxLoopCount !== (newValue as LocalStore).maxLoopCount ||
           safeValue.loopIntervalInMs !==
-            (newValue as LocalStore).loopIntervalInMs;
+            (newValue as LocalStore).loopIntervalInMs ||
+          safeValue.agentSTurnTimeoutMs !==
+            (newValue as LocalStore).agentSTurnTimeoutMs;
 
         if (didMutateUnsafeSetting) {
           SettingStore.instance.set(safeValue);
