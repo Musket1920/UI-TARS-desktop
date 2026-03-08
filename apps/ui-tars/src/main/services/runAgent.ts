@@ -357,13 +357,17 @@ export const runAgent = async (
       const runtimeFailureCode = runtimeResult.error?.code ?? 'runtime_error';
       const runtimeFailureClass =
         classifyAgentSFailureReason(runtimeFailureCode);
-      const breakerAfterRuntimeFailure =
-        agentSSidecarManager.recordCircuitFailure({
-          source: 'runtime',
-          reasonCode: runtimeFailureCode,
-        }) ??
-        dispatchCircuitStatus ??
-        agentSSidecarManager.getCircuitBreakerStatus();
+      const shouldRecordRuntimeCircuitFailure =
+        runtimeFailureCode !== 'AGENT_S_MAX_STEPS_REACHED';
+      const breakerAfterRuntimeFailure = shouldRecordRuntimeCircuitFailure
+        ? (agentSSidecarManager.recordCircuitFailure({
+            source: 'runtime',
+            reasonCode: runtimeFailureCode,
+          }) ??
+          dispatchCircuitStatus ??
+          agentSSidecarManager.getCircuitBreakerStatus())
+        : (dispatchCircuitStatus ??
+          agentSSidecarManager.getCircuitBreakerStatus());
 
       emitDispatcherFallbackTelemetry(runCorrelation, {
         reasonCode: runtimeFailureCode,

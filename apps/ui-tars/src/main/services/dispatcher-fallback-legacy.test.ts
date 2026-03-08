@@ -415,6 +415,61 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
     });
   });
 
+  it('does not poison the circuit breaker when Agent-S runtime hits max steps', async () => {
+    const { setState, getState } = createStateHandlers();
+    sidecarHealthMock.mockResolvedValue({
+      state: 'running',
+      mode: 'embedded',
+      healthy: true,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 777,
+      checkedAt: 1_000,
+      lastHeartbeatAt: 1_000,
+    });
+    runAgentSRuntimeLoopMock.mockResolvedValue({
+      status: StatusEnum.ERROR,
+      stepsExecuted: 5,
+      error: {
+        code: 'AGENT_S_MAX_STEPS_REACHED',
+        message: 'max steps reached',
+        step: 5,
+      },
+    });
+
+    await runAgent(
+      setState as unknown as RunAgentSetState,
+      getState as unknown as RunAgentGetState,
+    );
+
+    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(setState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorMsg: null,
+      }),
+    );
+
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+
+    const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
+      (call) =>
+        call[0] === 'agent_s.fallback.triggered' &&
+        call[1]?.source === 'agent_s.dispatcher' &&
+        call[1]?.reasonCode === 'AGENT_S_MAX_STEPS_REACHED',
+    );
+
+    expect(fallbackEvent?.[1]).toMatchObject({
+      circuitBreakerState: 'closed',
+      circuitConsecutiveFailures: 0,
+      reasonCode: 'AGENT_S_MAX_STEPS_REACHED',
+    });
+    expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
+  });
+
   it('closes lifecycle once when legacy fallback setup throws after Agent-S attempt', async () => {
     const { setState, getState } = createStateHandlers();
     sidecarHealthMock.mockResolvedValue({
