@@ -63,7 +63,7 @@ export const settingRoute = t.router({
         return Boolean(completion?.id || completion.choices[0].message.content);
       } catch (e) {
         logger.warn('[checkModelAvailability] failed:', e);
-        return false;
+        throw e;
       }
     }),
 });
