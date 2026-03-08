@@ -697,4 +697,101 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(result.stepsExecuted).toBe(1);
     expect(timers.scheduled.some((timer) => timer.ms === 250)).toBe(false);
   });
+
+  it('uses the dedicated loop interval normalizer for runtime delays', async () => {
+    vi.resetModules();
+    const normalizeAgentSLoopIntervalMsMock = vi.fn((value: unknown) => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(75, Math.floor(value));
+      }
+
+      return 1_000;
+    });
+
+    vi.doMock('@main/store/safetyPolicy', async () => {
+      const actual = await vi.importActual<
+        typeof import('@main/store/safetyPolicy')
+      >('@main/store/safetyPolicy');
+
+      return {
+        ...actual,
+        normalizeAgentSLoopIntervalMs: normalizeAgentSLoopIntervalMsMock,
+      };
+    });
+
+    try {
+      const { runAgentSRuntimeLoop: runAgentSRuntimeLoopWithMock } =
+        await import('./runtimeLoop');
+      const { setState, getState } = createStateHandlers();
+      const sidecarManager = createFakeSidecarManager();
+      const timers = createTimerDeps();
+      const operator: AgentSRuntimeOperator = {
+        screenshot: vi
+          .fn()
+          .mockResolvedValue({ base64: 'ZmFrZQ==', scaleFactor: 1 }),
+        execute: vi
+          .fn()
+          .mockResolvedValueOnce({ status: StatusEnum.RUNNING })
+          .mockResolvedValueOnce({ status: StatusEnum.END }),
+      };
+      const predictFetch = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(createPredictResponse('wait', 'keep going'));
+
+      translateAgentSActionMock.mockReturnValue({
+        ok: true,
+        normalizedAction: 'wait',
+        parsed: {
+          action_type: 'wait',
+          action_inputs: {},
+          thought: '',
+          reflection: null,
+        },
+      });
+
+      const loopPromise = runAgentSRuntimeLoopWithMock({
+        setState,
+        getState,
+        settings: {
+          ...createSettings(),
+          loopIntervalInMs: 25,
+          agentSTurnTimeoutMs: 1_000,
+        },
+        operator,
+        instruction: 'use dedicated loop interval floor',
+        sessionHistoryMessages: [],
+        deps: {
+          fetch: predictFetch,
+          sidecarManager,
+          setTimeout: timers.setTimeout,
+          clearTimeout: timers.clearTimeout,
+          now: () => 1_234,
+        },
+      });
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        if (timers.scheduled.some((timer) => timer.ms === 75)) {
+          break;
+        }
+
+        await flushMicrotasks();
+      }
+
+      const loopTimer = timers.scheduled.find((timer) => timer.ms === 75);
+
+      expect(normalizeAgentSLoopIntervalMsMock).toHaveBeenCalledWith(25);
+      expect(loopTimer).toBeDefined();
+      expect(timers.scheduled.some((timer) => timer.ms === 50)).toBe(false);
+
+      loopTimer?.callback();
+
+      const result = await loopPromise;
+
+      expect(result.status).toBe(StatusEnum.END);
+      expect(result.stepsExecuted).toBe(2);
+    } finally {
+      vi.doUnmock('@main/store/safetyPolicy');
+      vi.resetModules();
+    }
+  });
 });

@@ -6,6 +6,7 @@ import type { LocalStore } from './types';
 
 export const AGENT_S_SAFE_MAX_STEPS = 200;
 export const AGENT_S_SAFE_DEFAULT_MAX_STEPS = 100;
+export const AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS = 50;
 export const AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS = 50;
 export const AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS = 1_000;
 export const AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS = 3_000;
@@ -25,6 +26,15 @@ const normalizeBoundedNumber = (
   return Math.min(max, Math.max(min, Math.floor(value)));
 };
 
+export const normalizeAgentSLoopIntervalMs = (value: unknown): number => {
+  return normalizeBoundedNumber(
+    value,
+    AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS,
+    AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
+    AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+  );
+};
+
 export const enforceAgentSSafetyPolicy = (settings: LocalStore): LocalStore => {
   return {
     ...settings,
@@ -35,12 +45,7 @@ export const enforceAgentSSafetyPolicy = (settings: LocalStore): LocalStore => {
       1,
       AGENT_S_SAFE_MAX_STEPS,
     ),
-    loopIntervalInMs: normalizeBoundedNumber(
-      settings.loopIntervalInMs,
-      AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS,
-      AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
-      AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
-    ),
+    loopIntervalInMs: normalizeAgentSLoopIntervalMs(settings.loopIntervalInMs),
     agentSTurnTimeoutMs: normalizeBoundedNumber(
       settings.agentSTurnTimeoutMs,
       AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,

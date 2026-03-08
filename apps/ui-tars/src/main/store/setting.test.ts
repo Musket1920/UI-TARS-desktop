@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AGENT_S_SAFE_DEFAULT_LOOP_INTERVAL_MS,
   AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
+  AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
   AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
 } from './safetyPolicy';
 import { AgentSSidecarMode, EngineMode, LocalStore, Operator } from './types';
@@ -118,6 +119,29 @@ describe('SettingStore', () => {
     expect(electronStoreSetMock).toHaveBeenCalledWith(
       expect.objectContaining({
         agentSTurnTimeoutMs: AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+      }),
+    );
+    expect(browserWindowSendMock).not.toHaveBeenCalled();
+  });
+
+  it('rewrites unsafe persisted Agent-S loop intervals to the dedicated safe floor', async () => {
+    const { SettingStore } = await import('./setting');
+
+    SettingStore.getInstance();
+
+    expect(onDidAnyChangeHandlerRef.current).toBeTypeOf('function');
+
+    const previousValue = createSettings();
+    const unsafeValue = createSettings({
+      loopIntervalInMs: AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS - 1,
+    });
+
+    onDidAnyChangeHandlerRef.current?.(unsafeValue, previousValue);
+
+    expect(electronStoreSetMock).toHaveBeenCalledTimes(1);
+    expect(electronStoreSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loopIntervalInMs: AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
       }),
     );
     expect(browserWindowSendMock).not.toHaveBeenCalled();
