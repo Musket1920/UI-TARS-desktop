@@ -369,18 +369,15 @@ describe('sidecar-manager', () => {
     expect(restarted.endpoint).toBe('http://127.0.0.1:9401');
   });
 
-  it('latest overlapping start request wins over an in-flight startup', async () => {
-    const firstChild = new MockChildProcess(7001);
-    const secondChild = new MockChildProcess(7002);
-    const firstProbe = createDeferred<Response>();
-    const spawnMock = vi
-      .fn<SpawnFunction>()
-      .mockReturnValueOnce(firstChild as unknown as ReturnType<SpawnFunction>)
-      .mockReturnValueOnce(secondChild as unknown as ReturnType<SpawnFunction>);
+  it('deduplicates concurrent start calls while startup is already in flight', async () => {
+    const child = new MockChildProcess(7003);
+    const startupProbe = createDeferred<Response>();
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockImplementationOnce(() => firstProbe.promise)
-      .mockResolvedValueOnce(createHealthyResponse());
+      .mockImplementation(() => startupProbe.promise);
 
     const manager = new AgentSSidecarManager({
       spawn: spawnMock,
@@ -388,46 +385,37 @@ describe('sidecar-manager', () => {
       now: () => Date.now(),
     });
 
-    const firstStart = manager.start({
-      mode: 'embedded',
+    const config = {
+      mode: 'embedded' as const,
       command: 'python',
       args: ['-m', 'agent_s'],
-      endpoint: 'http://127.0.0.1:9700',
+      endpoint: 'http://127.0.0.1:9702',
       startupTimeoutMs: 1_000,
       startupPollIntervalMs: 100,
       heartbeatIntervalMs: 1_000,
       healthTimeoutMs: 300,
-    });
+    };
 
-    const secondStart = manager.start({
-      mode: 'embedded',
-      command: 'python3',
-      args: ['-m', 'agent_s'],
-      endpoint: 'http://127.0.0.1:9701',
-      startupTimeoutMs: 1_000,
-      startupPollIntervalMs: 100,
-      heartbeatIntervalMs: 1_000,
-      healthTimeoutMs: 300,
-    });
+    const firstStart = manager.start(config);
+    const secondStart = manager.start(config);
 
-    expect(secondStart).not.toBe(firstStart);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(child.killed).toBe(false);
 
-    const latestStatus = await secondStart;
-    expect(firstChild.killed).toBe(true);
-    expect(spawnMock).toHaveBeenCalledTimes(2);
-    expect(spawnMock.mock.calls[0]?.[0]).toBe('python');
-    expect(spawnMock.mock.calls[1]?.[0]).toBe('python3');
-    expect(latestStatus.state).toBe('running');
-    expect(latestStatus.endpoint).toBe('http://127.0.0.1:9701');
-    expect(latestStatus.pid).toBe(7002);
+    startupProbe.resolve(createHealthyResponse());
 
-    firstProbe.resolve(createHealthyResponse());
-    const staleStatus = await firstStart;
+    const [firstStatus, secondStatus] = await Promise.all([
+      firstStart,
+      secondStart,
+    ]);
 
-    expect(staleStatus.state).toBe('running');
-    expect(staleStatus.endpoint).toBe('http://127.0.0.1:9701');
-    expect(staleStatus.pid).toBe(7002);
-    expect(manager.getStatus().endpoint).toBe('http://127.0.0.1:9701');
+    expect(firstStatus.state).toBe('running');
+    expect(secondStatus.state).toBe('running');
+    expect(secondStatus.endpoint).toBe('http://127.0.0.1:9702');
+    expect(secondStatus.pid).toBe(7003);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('stop during startup followed by new start does not reuse stale startup result', async () => {
@@ -489,18 +477,15 @@ describe('sidecar-manager', () => {
     expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 
-  it('applies the latest config to status and health probes after overlapping starts', async () => {
-    const firstChild = new MockChildProcess(7201);
-    const secondChild = new MockChildProcess(7202);
-    const firstProbe = createDeferred<Response>();
-    const spawnMock = vi
-      .fn<SpawnFunction>()
-      .mockReturnValueOnce(firstChild as unknown as ReturnType<SpawnFunction>)
-      .mockReturnValueOnce(secondChild as unknown as ReturnType<SpawnFunction>);
+  it('keeps the in-flight config for status and health probes when start is deduplicated', async () => {
+    const child = new MockChildProcess(7201);
+    const startupProbe = createDeferred<Response>();
+    const spawnMock = vi.fn<SpawnFunction>(
+      () => child as unknown as ReturnType<SpawnFunction>,
+    );
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockImplementationOnce(() => firstProbe.promise)
-      .mockResolvedValueOnce(createHealthyResponse())
+      .mockImplementationOnce(() => startupProbe.promise)
       .mockResolvedValueOnce(createHealthyResponse({ status: 'running' }));
 
     const manager = new AgentSSidecarManager({
@@ -520,7 +505,7 @@ describe('sidecar-manager', () => {
       healthTimeoutMs: 300,
     });
 
-    const latestStatus = await manager.start({
+    const secondStart = manager.start({
       mode: 'embedded',
       command: 'python3',
       args: ['-m', 'agent_s', '--port', '10801'],
@@ -531,22 +516,27 @@ describe('sidecar-manager', () => {
       healthTimeoutMs: 300,
     });
 
-    firstProbe.resolve(createHealthyResponse());
-    await firstStart;
+    startupProbe.resolve(createHealthyResponse());
 
+    const [firstStatus, secondStatus] = await Promise.all([
+      firstStart,
+      secondStart,
+    ]);
     const probed = await manager.health({ probe: true });
 
-    expect(latestStatus.endpoint).toBe('http://127.0.0.1:9721/base');
-    expect(probed.endpoint).toBe('http://127.0.0.1:9721/base');
-    expect(probed.pid).toBe(7202);
+    expect(firstStatus.endpoint).toBe('http://127.0.0.1:9720');
+    expect(secondStatus.endpoint).toBe('http://127.0.0.1:9720');
+    expect(probed.endpoint).toBe('http://127.0.0.1:9720');
+    expect(probed.pid).toBe(7201);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      'http://127.0.0.1:9721/base/health',
+      1,
+      'http://127.0.0.1:9720/health',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      'http://127.0.0.1:9721/base/health',
+      2,
+      'http://127.0.0.1:9720/health',
       expect.objectContaining({ method: 'GET' }),
     );
   });

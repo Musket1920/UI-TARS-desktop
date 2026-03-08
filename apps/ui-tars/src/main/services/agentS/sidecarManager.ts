@@ -153,11 +153,11 @@ type HealthProbeResult = {
 
 type HealthProbeContext = 'probe' | 'startup' | 'heartbeat';
 
-const DEFAULT_STARTUP_TIMEOUT_MS = 12_000;
-const DEFAULT_STARTUP_POLL_INTERVAL_MS = 250;
-const DEFAULT_HEARTBEAT_INTERVAL_MS = 5_000;
-const DEFAULT_HEALTH_TIMEOUT_MS = 2_000;
-const DEFAULT_SHUTDOWN_TIMEOUT_MS = 3_000;
+export const DEFAULT_STARTUP_TIMEOUT_MS = 12_000;
+export const DEFAULT_STARTUP_POLL_INTERVAL_MS = 250;
+export const DEFAULT_HEARTBEAT_INTERVAL_MS = 5_000;
+export const DEFAULT_HEALTH_TIMEOUT_MS = 2_000;
+export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 3_000;
 const DEFAULT_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5;
 const DEFAULT_CIRCUIT_BREAKER_COOLDOWN_MS = 20_000;
 
@@ -345,6 +345,8 @@ export class AgentSSidecarManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   private startPromise: Promise<SidecarStatus> | null = null;
+
+  private startPromiseToken: number | null = null;
 
   private currentConfig: SidecarStartConfig | null = null;
 
@@ -558,14 +560,20 @@ export class AgentSSidecarManager {
   }
 
   async start(config: SidecarStartConfig): Promise<SidecarStatus> {
-    const startPromise = this.startInternal(config);
-    this.startPromise = startPromise;
+    if (this.startPromise && this.startPromiseToken === this.lifecycleToken) {
+      return this.startPromise;
+    }
 
-    return startPromise.finally(() => {
+    const startPromise = this.startInternal(config).finally(() => {
       if (this.startPromise === startPromise) {
         this.startPromise = null;
+        this.startPromiseToken = null;
       }
     });
+
+    this.startPromise = startPromise;
+    this.startPromiseToken = this.lifecycleToken;
+    return startPromise;
   }
 
   async restart(config?: SidecarStartConfig): Promise<SidecarStatus> {

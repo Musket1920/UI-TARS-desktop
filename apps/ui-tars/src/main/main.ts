@@ -18,7 +18,14 @@ import ElectronStore from 'electron-store';
 
 import * as env from '@main/env';
 import { logger } from '@main/logger';
-import { agentSSidecarManager } from '@main/services/agentS/sidecarManager';
+import {
+  agentSSidecarManager,
+  DEFAULT_HEALTH_TIMEOUT_MS,
+  DEFAULT_HEARTBEAT_INTERVAL_MS,
+  DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  DEFAULT_STARTUP_POLL_INTERVAL_MS,
+  DEFAULT_STARTUP_TIMEOUT_MS,
+} from '@main/services/agentS/sidecarManager';
 import { createMainWindow } from '@main/window/index';
 import { registerIpcMain } from '@ui-tars/electron-ipc/main';
 import { ipcRoutes } from './ipcRoutes';
@@ -67,11 +74,11 @@ const startAgentSSidecarIfNeeded = async (
     settings.agentSSidecarUrl,
     settings.agentSSidecarPort,
   );
-  const startupTimeoutMs = 12_000;
-  const startupPollIntervalMs = 250;
-  const heartbeatIntervalMs = 5_000;
-  const healthTimeoutMs = 2_000;
-  const shutdownTimeoutMs = 3_000;
+  const startupTimeoutMs = DEFAULT_STARTUP_TIMEOUT_MS;
+  const startupPollIntervalMs = DEFAULT_STARTUP_POLL_INTERVAL_MS;
+  const heartbeatIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const healthTimeoutMs = DEFAULT_HEALTH_TIMEOUT_MS;
+  const shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS;
 
   if (settings.agentSSidecarMode === AgentSSidecarMode.Remote) {
     const status = await agentSSidecarManager.start({
