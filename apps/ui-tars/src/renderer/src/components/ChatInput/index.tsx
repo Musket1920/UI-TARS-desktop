@@ -21,11 +21,13 @@ import { Button } from '@renderer/components/ui/button';
 import { api } from '@renderer/api';
 
 import { Play, Send, Square, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Textarea } from '@renderer/components/ui/textarea';
 import { useSession } from '@renderer/hooks/useSession';
 
 import { Operator } from '@main/store/types';
 import { useSetting } from '../../hooks/useSetting';
+import { executeChatInputRun } from './startRun';
 
 type RunRequestPhase = 'idle' | 'submitting';
 type RunStatus = 'idle' | 'thinking' | 'executing';
@@ -69,24 +71,29 @@ const ChatInput = ({
   }, [status]);
 
   useEffect(() => {
+    let nextOperator = Operator.LocalComputer;
+
     switch (operator) {
       case Operator.RemoteComputer:
-        updateSetting({ ...settings, operator: Operator.RemoteComputer });
+        nextOperator = Operator.RemoteComputer;
         break;
       case Operator.RemoteBrowser:
-        updateSetting({ ...settings, operator: Operator.RemoteBrowser });
+        nextOperator = Operator.RemoteBrowser;
         break;
       case Operator.LocalComputer:
-        updateSetting({ ...settings, operator: Operator.LocalComputer });
+        nextOperator = Operator.LocalComputer;
         break;
       case Operator.LocalBrowser:
-        updateSetting({ ...settings, operator: Operator.LocalBrowser });
+        nextOperator = Operator.LocalBrowser;
         break;
       default:
-        updateSetting({ ...settings, operator: Operator.LocalComputer });
         break;
     }
-  }, [operator]);
+
+    if (settings.operator !== nextOperator) {
+      updateSetting({ ...settings, operator: nextOperator });
+    }
+  }, [operator, settings, updateSetting]);
 
   const getInstantInstructions = () => {
     if (localInstructions?.trim()) {
@@ -101,38 +108,30 @@ const ChatInput = ({
   // console.log('running', 'status', status, running);
 
   const startRun = async () => {
-    if (checkBeforeRun) {
-      const checked = await checkBeforeRun();
+    await executeChatInputRun({
+      checkBeforeRun,
+      setRunRequestPhase,
+      onError: (message) => {
+        toast.error(message);
+      },
+      onRun: async () => {
+        const instructions = getInstantInstructions();
+        const history = chatMessages;
+        const session = await getSession(sessionId);
 
-      if (!checked) {
-        return;
-      }
-    }
+        await updateSession(sessionId, {
+          name: instructions,
+          meta: {
+            ...session!.meta,
+            ...(restUserData || {}),
+          },
+        });
 
-    setRunRequestPhase('submitting');
-
-    const instructions = getInstantInstructions();
-
-    console.log('startRun', instructions, restUserData);
-
-    const history = chatMessages;
-
-    try {
-      const session = await getSession(sessionId);
-      await updateSession(sessionId, {
-        name: instructions,
-        meta: {
-          ...session!.meta,
-          ...(restUserData || {}),
-        },
-      });
-
-      await run(instructions, history, () => {
-        setLocalInstructions('');
-      });
-    } finally {
-      setRunRequestPhase('idle');
-    }
+        await run(instructions, history, () => {
+          setLocalInstructions('');
+        });
+      },
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
