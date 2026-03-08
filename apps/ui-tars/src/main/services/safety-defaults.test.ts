@@ -252,6 +252,131 @@ describe('safety-defaults settings handlers', () => {
     );
   });
 
+  it('does not await sidecar callback during text preset import', async () => {
+    const callbackDeferred = createDeferred<void>();
+    let callbackSettled = false;
+
+    callbackDeferred.promise.finally(() => {
+      callbackSettled = true;
+    });
+    onSettingsUpdatedMock.mockImplementation(() => callbackDeferred.promise);
+    getStoreMock.mockReturnValue(safeSettings);
+    importPresetFromTextMock.mockResolvedValue(
+      createSettings({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://imported-sidecar.example.com',
+        agentSSidecarPort: 8443,
+      }),
+    );
+
+    const handler = getHandler('setting:importPresetFromText');
+
+    await expect(handler({}, 'yaml-content')).resolves.toBeUndefined();
+
+    expect(setStoreMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://imported-sidecar.example.com',
+        agentSSidecarPort: 8443,
+      }),
+    );
+    expect(callbackSettled).toBe(false);
+
+    callbackDeferred.resolve();
+    await callbackDeferred.promise;
+  });
+
+  it('does not await sidecar callback during remote preset import', async () => {
+    const callbackDeferred = createDeferred<void>();
+    let callbackSettled = false;
+
+    callbackDeferred.promise.finally(() => {
+      callbackSettled = true;
+    });
+    onSettingsUpdatedMock.mockImplementation(() => callbackDeferred.promise);
+    getStoreMock.mockReturnValue(safeSettings);
+    fetchPresetFromUrlMock.mockResolvedValue(
+      createSettings({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://remote-imported-sidecar.example.com',
+        agentSSidecarPort: 4317,
+      }),
+    );
+
+    const handler = getHandler('setting:importPresetFromUrl');
+
+    await expect(
+      handler({}, 'https://preset.example.com', true),
+    ).resolves.toBeUndefined();
+
+    expect(setStoreMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://remote-imported-sidecar.example.com',
+        agentSSidecarPort: 4317,
+      }),
+    );
+    expect(callbackSettled).toBe(false);
+
+    callbackDeferred.resolve();
+    await callbackDeferred.promise;
+  });
+
+  it('does not await sidecar callback during remote preset refresh', async () => {
+    const callbackDeferred = createDeferred<void>();
+    let callbackSettled = false;
+
+    callbackDeferred.promise.finally(() => {
+      callbackSettled = true;
+    });
+    onSettingsUpdatedMock.mockImplementation(() => callbackDeferred.promise);
+    getStoreMock.mockReturnValue(
+      createSettings({
+        presetSource: {
+          type: 'remote',
+          url: 'https://preset.example.com',
+          autoUpdate: true,
+          lastUpdated: 1,
+        },
+      }),
+    );
+    fetchPresetFromUrlMock.mockResolvedValue(
+      createSettings({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://refreshed-sidecar.example.com',
+        agentSSidecarPort: 8443,
+      }),
+    );
+
+    const handler = getHandler('setting:updatePresetFromRemote');
+
+    await expect(handler({})).resolves.toBeUndefined();
+
+    expect(setStoreMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledTimes(1);
+    expect(onSettingsUpdatedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engineMode: EngineMode.AgentS,
+        agentSSidecarMode: AgentSSidecarMode.Remote,
+        agentSSidecarUrl: 'https://refreshed-sidecar.example.com',
+        agentSSidecarPort: 8443,
+      }),
+    );
+    expect(callbackSettled).toBe(false);
+
+    callbackDeferred.resolve();
+    await callbackDeferred.promise;
+  });
+
   it('logs and swallows async callback failures after settings mutation', async () => {
     const callbackError = new Error('callback failed');
     const callbackDeferred = createDeferred<void>();

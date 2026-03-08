@@ -94,7 +94,7 @@ export function registerSettingsHandlers(
       if (
         haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
       ) {
-        await notifySettingsUpdated(nextSettings);
+        void notifySettingsUpdated(nextSettings);
       }
     } catch (error) {
       logger.error('Failed to import preset:', error);
@@ -124,7 +124,7 @@ export function registerSettingsHandlers(
       if (
         haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
       ) {
-        await notifySettingsUpdated(nextSettings);
+        void notifySettingsUpdated(nextSettings);
       }
     } catch (error) {
       logger.error('Failed to import preset from URL:', error);
@@ -159,7 +159,7 @@ export function registerSettingsHandlers(
       if (
         haveAgentSSidecarRelevantSettingsChanged(previousSettings, nextSettings)
       ) {
-        await notifySettingsUpdated(nextSettings);
+        void notifySettingsUpdated(nextSettings);
       }
     } else {
       throw new Error('No remote preset configured');
