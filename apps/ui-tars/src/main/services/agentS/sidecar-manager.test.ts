@@ -696,6 +696,22 @@ describe('sidecar-manager', () => {
     expect(stopped.state).toBe('stopped');
     expect(stopped.reason).toBe('stop_requested');
     expect(firstChild.killed).toBe(true);
+    expect(
+      (
+        manager as unknown as {
+          startPromise: Promise<unknown> | null;
+          startPromiseToken: number | null;
+        }
+      ).startPromise,
+    ).toBeNull();
+    expect(
+      (
+        manager as unknown as {
+          startPromise: Promise<unknown> | null;
+          startPromiseToken: number | null;
+        }
+      ).startPromiseToken,
+    ).toBeNull();
 
     const restarted = await manager.start({
       mode: 'embedded',

@@ -761,6 +761,11 @@ export class AgentSSidecarManager {
       { correlation: this.telemetryCorrelation },
     );
 
+    if (this.startPromiseToken !== this.lifecycleToken) {
+      this.startPromise = null;
+      this.startPromiseToken = null;
+    }
+
     return this.getStatus();
   }
 
