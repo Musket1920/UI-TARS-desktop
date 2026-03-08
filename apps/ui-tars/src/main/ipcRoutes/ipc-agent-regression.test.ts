@@ -154,6 +154,28 @@ describe('ipc-agent-regression existing agent routes', () => {
     expect(store.setState).toHaveBeenCalledWith({ thinking: false });
   });
 
+  it('runAgent clears thinking when runAgent throws', async () => {
+    const failure = new Error('greptile failure');
+    runAgentMock.mockRejectedValueOnce(failure);
+
+    await expect(
+      agentRoute.runAgent.handle({
+        input: undefined,
+        context: {} as RunAgentContext,
+      }),
+    ).rejects.toThrow(failure);
+
+    expect(store.setState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thinking: true,
+        errorMsg: null,
+        agentSPaused: false,
+      }),
+    );
+    expect(store.setState).toHaveBeenCalledWith({ thinking: false });
+    expect(store.getState().thinking).toBe(false);
+  });
+
   it('runAgent still no-ops when already thinking', async () => {
     store.getState().thinking = true;
 

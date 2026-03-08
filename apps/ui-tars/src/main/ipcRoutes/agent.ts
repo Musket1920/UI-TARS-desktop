@@ -250,9 +250,11 @@ export const agentRoute = t.router({
       agentSPaused: false,
     });
 
-    await runAgent(store.setState, store.getState);
-
-    store.setState({ thinking: false });
+    try {
+      await runAgent(store.setState, store.getState);
+    } finally {
+      store.setState({ thinking: false });
+    }
   }),
   pauseRun: t.procedure.input<void>().handle(async () => {
     const guiAgent = GUIAgentManager.getInstance().getAgent();
