@@ -83,7 +83,10 @@ vi.mock('lucide-react', () => ({
   ShieldOff: () => null,
 }));
 
-import { getPersistedAgentSFormValues } from './engine';
+import {
+  getAgentSPersistEffectInputs,
+  getPersistedAgentSFormValues,
+} from './engine';
 
 describe('Agent-S settings form reset trigger', () => {
   const persistedAgentSSettings: LocalStore = {
@@ -123,5 +126,50 @@ describe('Agent-S settings form reset trigger', () => {
     expect(getPersistedAgentSFormValues(externalAgentSChange)).not.toEqual(
       getPersistedAgentSFormValues(persistedAgentSSettings),
     );
+  });
+});
+
+describe('Agent-S settings persist effect inputs', () => {
+  const persistedAgentSSettings: LocalStore = {
+    vlmBaseUrl: 'https://vlm.example.com',
+    vlmApiKey: 'test-key',
+    vlmModelName: 'ui-tars-test',
+    operator: Operator.LocalComputer,
+    engineMode: EngineMode.AgentS,
+    agentSSidecarMode: AgentSSidecarMode.Remote,
+    agentSSidecarUrl: 'https://sidecar.example.com',
+    agentSSidecarPort: 54321,
+  };
+
+  it('stays stable when unrelated persisted settings change', () => {
+    const baseInputs = getAgentSPersistEffectInputs({
+      hasPersistedSettings: true,
+      ...getPersistedAgentSFormValues(persistedAgentSSettings),
+    });
+    const withUnrelatedChange = getAgentSPersistEffectInputs({
+      hasPersistedSettings: true,
+      ...getPersistedAgentSFormValues({
+        ...persistedAgentSSettings,
+        language: 'en',
+      }),
+    });
+
+    expect(withUnrelatedChange).toEqual(baseInputs);
+  });
+
+  it('changes when persisted Agent-S values change externally', () => {
+    const baseInputs = getAgentSPersistEffectInputs({
+      hasPersistedSettings: true,
+      ...getPersistedAgentSFormValues(persistedAgentSSettings),
+    });
+    const externalAgentSChange = getAgentSPersistEffectInputs({
+      hasPersistedSettings: true,
+      ...getPersistedAgentSFormValues({
+        ...persistedAgentSSettings,
+        agentSSidecarPort: 60000,
+      }),
+    });
+
+    expect(externalAgentSChange).not.toEqual(baseInputs);
   });
 });

@@ -67,6 +67,10 @@ type PersistedAgentSFormValues = Pick<
   'engineMode' | 'agentSSidecarMode' | 'agentSSidecarUrl' | 'agentSSidecarPort'
 >;
 
+type AgentSPersistEffectInputs = PersistedAgentSFormValues & {
+  hasPersistedSettings: boolean;
+};
+
 const HEALTH_BADGE_VARIANT: Record<
   AgentSHealthPayload['status'],
   'default' | 'destructive' | 'outline' | 'secondary'
@@ -103,6 +107,12 @@ export const getPersistedAgentSFormValues = (
     agentSSidecarUrl: settings.agentSSidecarUrl ?? '',
     agentSSidecarPort: toSidecarPortInputValue(settings.agentSSidecarPort),
   };
+};
+
+export const getAgentSPersistEffectInputs = (
+  inputs: AgentSPersistEffectInputs,
+): AgentSPersistEffectInputs => {
+  return inputs;
 };
 
 export function EngineSettings({ className }: { className?: string }) {
@@ -152,6 +162,23 @@ export function EngineSettings({ className }: { className?: string }) {
       persistedSidecarPort,
     ],
   );
+  const persistEffectInputs = useMemo(
+    () =>
+      getAgentSPersistEffectInputs({
+        hasPersistedSettings,
+        engineMode: newEngineMode,
+        agentSSidecarMode: newSidecarMode,
+        agentSSidecarUrl: newSidecarUrl,
+        agentSSidecarPort: newSidecarPort,
+      }),
+    [
+      hasPersistedSettings,
+      newEngineMode,
+      newSidecarMode,
+      newSidecarUrl,
+      newSidecarPort,
+    ],
+  );
 
   useEffect(() => {
     latestSettingsRef.current = settings;
@@ -177,27 +204,34 @@ export function EngineSettings({ className }: { className?: string }) {
   }, [hasPersistedSettings, persistedAgentSFormValues, form]);
 
   useEffect(() => {
-    if (!Object.keys(settings).length) {
+    if (!persistEffectInputs.hasPersistedSettings) {
       return;
     }
 
+    const {
+      engineMode: persistedEngineMode,
+      agentSSidecarMode: persistedSidecarMode,
+      agentSSidecarUrl: persistedSidecarUrl,
+      agentSSidecarPort: persistedSidecarPort,
+    } = persistEffectInputs;
+
     const persist = async () => {
       if (
-        newEngineMode &&
-        newEngineMode !== latestSettingsRef.current.engineMode
+        persistedEngineMode &&
+        persistedEngineMode !== latestSettingsRef.current.engineMode
       ) {
-        persistSettingsDelta({ engineMode: newEngineMode });
+        persistSettingsDelta({ engineMode: persistedEngineMode });
       }
 
       if (
-        newSidecarMode &&
-        newSidecarMode !== latestSettingsRef.current.agentSSidecarMode
+        persistedSidecarMode &&
+        persistedSidecarMode !== latestSettingsRef.current.agentSSidecarMode
       ) {
-        persistSettingsDelta({ agentSSidecarMode: newSidecarMode });
+        persistSettingsDelta({ agentSSidecarMode: persistedSidecarMode });
       }
 
-      if (newSidecarUrl !== undefined) {
-        const pendingSidecarUrl = newSidecarUrl;
+      if (persistedSidecarUrl !== undefined) {
+        const pendingSidecarUrl = persistedSidecarUrl;
         const isUrlValid = await form.trigger('agentSSidecarUrl');
         const latestSidecarUrl = form.getValues('agentSSidecarUrl');
 
@@ -213,8 +247,8 @@ export function EngineSettings({ className }: { className?: string }) {
         }
       }
 
-      if (newSidecarPort !== undefined) {
-        const pendingSidecarPort = newSidecarPort;
+      if (persistedSidecarPort !== undefined) {
+        const pendingSidecarPort = persistedSidecarPort;
         const isPortValid = await form.trigger('agentSSidecarPort');
         const latestSidecarPort = form.getValues('agentSSidecarPort');
 
@@ -229,15 +263,7 @@ export function EngineSettings({ className }: { className?: string }) {
     };
 
     void persist();
-  }, [
-    newEngineMode,
-    newSidecarMode,
-    newSidecarUrl,
-    newSidecarPort,
-    settings,
-    persistSettingsDelta,
-    form,
-  ]);
+  }, [persistEffectInputs, persistSettingsDelta, form]);
 
   const fetchStatus = useCallback(async () => {
     try {
