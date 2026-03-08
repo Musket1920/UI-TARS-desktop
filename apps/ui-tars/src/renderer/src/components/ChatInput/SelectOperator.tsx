@@ -64,6 +64,16 @@ const getOperatorLabel = (type: Operator) => {
   }
 };
 
+const getEngineLabel = (engineMode?: EngineMode | null) => {
+  switch (engineMode) {
+    case EngineMode.AgentS:
+      return 'Agent-S';
+    case EngineMode.UITARS:
+    default:
+      return 'UI-TARS';
+  }
+};
+
 export const SelectOperator = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
@@ -198,7 +208,7 @@ export const SelectOperator = () => {
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuLabel className="opacity-70 text-xs">
-            Engine: {settings.engineMode ?? EngineMode.UITARS}
+            Engine: {getEngineLabel(settings.engineMode)}
           </DropdownMenuLabel>
           {isAgentSSelected && (
             <DropdownMenuLabel className="opacity-70 text-xs">
