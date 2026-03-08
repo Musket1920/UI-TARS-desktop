@@ -22,6 +22,8 @@ export const executeChatInputRun = async ({
   onError,
 }: ExecuteChatInputRunOptions) => {
   try {
+    setRunRequestPhase('submitting');
+
     if (checkBeforeRun) {
       const checked = await checkBeforeRun();
 
@@ -30,7 +32,6 @@ export const executeChatInputRun = async ({
       }
     }
 
-    setRunRequestPhase('submitting');
     await onRun();
   } catch (error) {
     onError(getChatInputRunErrorMessage(error));
