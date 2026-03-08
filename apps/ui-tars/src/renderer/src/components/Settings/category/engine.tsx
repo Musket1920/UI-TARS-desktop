@@ -45,6 +45,11 @@ type AgentRuntimeStatusPayload = Awaited<
   ReturnType<typeof api.getAgentRuntimeStatus>
 >;
 
+type AgentSStatusSnapshot<THealth, TRuntimeStatus> = {
+  health: THealth | null;
+  runtimeStatus: TRuntimeStatus | null;
+};
+
 const formSchema = z.object({
   engineMode: z.nativeEnum(EngineMode),
   agentSSidecarMode: z.nativeEnum(AgentSSidecarMode),
@@ -113,6 +118,59 @@ export const getAgentSPersistEffectInputs = (
   inputs: AgentSPersistEffectInputs,
 ): AgentSPersistEffectInputs => {
   return inputs;
+};
+
+export const createAgentSStatusLoader = <THealth, TRuntimeStatus>({
+  setLoadingStatus,
+  setStatus,
+  fetchStatus,
+  onError,
+}: {
+  setLoadingStatus: (loading: boolean) => void;
+  setStatus: (status: AgentSStatusSnapshot<THealth, TRuntimeStatus>) => void;
+  fetchStatus: () => Promise<{
+    health: THealth;
+    runtimeStatus: TRuntimeStatus;
+  }>;
+  onError?: (error: unknown) => void;
+}) => {
+  let active = true;
+
+  const run = async () => {
+    if (!active) {
+      return;
+    }
+
+    setLoadingStatus(true);
+
+    try {
+      const nextStatus = await fetchStatus();
+
+      if (!active) {
+        return;
+      }
+
+      setStatus(nextStatus);
+    } catch (error) {
+      if (!active) {
+        return;
+      }
+
+      onError?.(error);
+      setStatus({ health: null, runtimeStatus: null });
+    } finally {
+      if (active) {
+        setLoadingStatus(false);
+      }
+    }
+  };
+
+  return {
+    run,
+    stop: () => {
+      active = false;
+    },
+  };
 };
 
 export function EngineSettings({ className }: { className?: string }) {
@@ -265,34 +323,46 @@ export function EngineSettings({ className }: { className?: string }) {
     void persist();
   }, [persistEffectInputs, persistSettingsDelta, form]);
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      setIsLoadingStatus(true);
-      const [healthPayload, runtimePayload] = await Promise.all([
-        api.getAgentSHealth(),
-        api.getAgentRuntimeStatus(),
-      ]);
-      setHealth(healthPayload);
-      setRuntimeStatus(runtimePayload);
-    } catch (error) {
-      console.error('Failed to load Agent-S status', error);
-      setHealth(null);
-      setRuntimeStatus(null);
-    } finally {
-      setIsLoadingStatus(false);
-    }
-  }, []);
+  const statusLoader = useMemo(
+    () =>
+      createAgentSStatusLoader({
+        setLoadingStatus: setIsLoadingStatus,
+        setStatus: ({
+          health: nextHealth,
+          runtimeStatus: nextRuntimeStatus,
+        }) => {
+          setHealth(nextHealth);
+          setRuntimeStatus(nextRuntimeStatus);
+        },
+        fetchStatus: async () => {
+          const [healthPayload, runtimePayload] = await Promise.all([
+            api.getAgentSHealth(),
+            api.getAgentRuntimeStatus(),
+          ]);
+
+          return {
+            health: healthPayload,
+            runtimeStatus: runtimePayload,
+          };
+        },
+        onError: (error) => {
+          console.error('Failed to load Agent-S status', error);
+        },
+      }),
+    [],
+  );
 
   useEffect(() => {
-    void fetchStatus();
+    void statusLoader.run();
     const timer = setInterval(() => {
-      void fetchStatus();
+      void statusLoader.run();
     }, 15000);
 
     return () => {
+      statusLoader.stop();
       clearInterval(timer);
     };
-  }, [fetchStatus]);
+  }, [statusLoader]);
 
   const runtimeRuntimeLabel = useMemo(() => {
     if (!runtimeStatus) return 'Unknown';
@@ -435,7 +505,7 @@ export function EngineSettings({ className }: { className?: string }) {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => void fetchStatus()}
+            onClick={() => void statusLoader.run()}
             disabled={isLoadingStatus}
           >
             {isLoadingStatus ? (

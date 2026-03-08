@@ -84,9 +84,26 @@ vi.mock('lucide-react', () => ({
 }));
 
 import {
+  createAgentSStatusLoader,
   getAgentSPersistEffectInputs,
   getPersistedAgentSFormValues,
 } from './engine';
+
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
+};
 
 describe('Agent-S settings form reset trigger', () => {
   const persistedAgentSSettings: LocalStore = {
@@ -171,5 +188,101 @@ describe('Agent-S settings persist effect inputs', () => {
     });
 
     expect(externalAgentSChange).not.toEqual(baseInputs);
+  });
+});
+
+describe('createAgentSStatusLoader', () => {
+  it('publishes fetched status while active', async () => {
+    const setLoadingStatus = vi.fn();
+    const setStatus = vi.fn();
+
+    const loader = createAgentSStatusLoader({
+      setLoadingStatus,
+      setStatus,
+      fetchStatus: async () => ({
+        health: { status: 'healthy', engine: { mode: EngineMode.AgentS } },
+        runtimeStatus: {
+          engine: { runtime: 'agent-s' },
+          status: 'running',
+        },
+      }),
+    });
+
+    await loader.run();
+
+    expect(setLoadingStatus).toHaveBeenNthCalledWith(1, true);
+    expect(setLoadingStatus).toHaveBeenNthCalledWith(2, false);
+    expect(setStatus).toHaveBeenCalledWith({
+      health: { status: 'healthy', engine: { mode: EngineMode.AgentS } },
+      runtimeStatus: {
+        engine: { runtime: 'agent-s' },
+        status: 'running',
+      },
+    });
+  });
+
+  it('does not publish fulfilled results after stop', async () => {
+    const setLoadingStatus = vi.fn();
+    const setStatus = vi.fn();
+    const deferred = createDeferred<{
+      health: { status: 'healthy'; engine: { mode: EngineMode } };
+      runtimeStatus: {
+        engine: { runtime: 'agent-s' };
+        status: 'running';
+      };
+    }>();
+
+    const loader = createAgentSStatusLoader({
+      setLoadingStatus,
+      setStatus,
+      fetchStatus: () => deferred.promise,
+    });
+
+    const runPromise = loader.run();
+    loader.stop();
+    deferred.resolve({
+      health: { status: 'healthy', engine: { mode: EngineMode.AgentS } },
+      runtimeStatus: {
+        engine: { runtime: 'agent-s' },
+        status: 'running',
+      },
+    });
+
+    await runPromise;
+
+    expect(setLoadingStatus).toHaveBeenCalledTimes(1);
+    expect(setLoadingStatus).toHaveBeenCalledWith(true);
+    expect(setStatus).not.toHaveBeenCalled();
+  });
+
+  it('does not clear state after stop when fetch fails', async () => {
+    const setLoadingStatus = vi.fn();
+    const setStatus = vi.fn();
+    const onError = vi.fn();
+    const deferred = createDeferred<{
+      health: { status: 'healthy'; engine: { mode: EngineMode } };
+      runtimeStatus: {
+        engine: { runtime: 'agent-s' };
+        status: 'running';
+      };
+    }>();
+
+    const loader = createAgentSStatusLoader({
+      setLoadingStatus,
+      setStatus,
+      fetchStatus: () => deferred.promise,
+      onError,
+    });
+
+    const runPromise = loader.run();
+    loader.stop();
+    deferred.reject(new Error('poll failed'));
+
+    await runPromise;
+
+    expect(setLoadingStatus).toHaveBeenCalledTimes(1);
+    expect(setLoadingStatus).toHaveBeenCalledWith(true);
+    expect(onError).not.toHaveBeenCalled();
+    expect(setStatus).not.toHaveBeenCalled();
   });
 });
