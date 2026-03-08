@@ -164,6 +164,101 @@ const hasUnsafeTopLevelCode = (value: string): boolean => {
   );
 };
 
+const splitArgPairs = (
+  rawArgs: string,
+): string[] | AgentSActionTranslationError => {
+  const pairs: string[] = [];
+  let current = '';
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  for (const char of rawArgs) {
+    if (quote) {
+      current += char;
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (char === quote) {
+        quote = null;
+      }
+
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === ',') {
+      const pair = current.trim();
+      if (pair !== '') {
+        pairs.push(pair);
+      }
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (quote || escaped) {
+    return errorResult(
+      'TRANSLATION_MALFORMED_INPUT',
+      'Unable to parse action arguments',
+    );
+  }
+
+  const pair = current.trim();
+  if (pair !== '') {
+    pairs.push(pair);
+  }
+
+  return pairs;
+};
+
+const unquoteValue = (value: string): string => {
+  const quote = value[0];
+  let result = '';
+  let escaped = false;
+
+  for (let index = 1; index < value.length - 1; index += 1) {
+    const char = value[index];
+
+    if (escaped) {
+      if (char === quote || char === '\\') {
+        result += char;
+      } else {
+        result += `\\${char}`;
+      }
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    result += char;
+  }
+
+  if (escaped) {
+    result += '\\';
+  }
+
+  return result;
+};
+
 const parseArgs = (
   rawArgs: string,
 ): Record<string, unknown> | AgentSActionTranslationError => {
@@ -173,7 +268,10 @@ const parseArgs = (
     return args;
   }
 
-  const pairs = rawArgs.match(/([^,'"]|"[^"]*"|'[^']*')+/g) ?? [];
+  const pairs = splitArgPairs(rawArgs);
+  if (isTranslationError(pairs)) {
+    return pairs;
+  }
 
   for (const pair of pairs) {
     const equalIndex = pair.indexOf('=');
@@ -191,7 +289,7 @@ const parseArgs = (
       (value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))
     ) {
-      value = value.slice(1, -1);
+      value = unquoteValue(value);
     }
 
     args[key] = value;

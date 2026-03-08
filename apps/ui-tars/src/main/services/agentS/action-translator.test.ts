@@ -134,6 +134,32 @@ describe('action-translator', () => {
     }
   });
 
+  it('accepts escaped quotes inside quoted type text', () => {
+    const escapedSingleQuote = translateAgentSAction(
+      "type(text='it\\'s done')",
+    );
+    const escapedDoubleQuote = translateAgentSAction(
+      'type(text="say \\\"hi\\\", then stop")',
+    );
+
+    expect(escapedSingleQuote.ok).toBe(true);
+    expect(escapedDoubleQuote.ok).toBe(true);
+
+    if (escapedSingleQuote.ok) {
+      expect(escapedSingleQuote.normalizedAction).toBe('type');
+      expect(escapedSingleQuote.parsed.action_inputs).toEqual({
+        content: "it's done",
+      });
+    }
+
+    if (escapedDoubleQuote.ok) {
+      expect(escapedDoubleQuote.normalizedAction).toBe('type');
+      expect(escapedDoubleQuote.parsed.action_inputs).toEqual({
+        content: 'say "hi", then stop',
+      });
+    }
+  });
+
   it('returns TRANSLATION_UNSUPPORTED_ACTION for unknown action', () => {
     const result = translateAgentSAction({
       action: 'open_app',
