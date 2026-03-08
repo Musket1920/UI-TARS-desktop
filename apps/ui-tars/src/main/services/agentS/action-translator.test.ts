@@ -160,6 +160,58 @@ describe('action-translator', () => {
     }
   });
 
+  it('accepts intentionally empty type content when the field is present', () => {
+    const result = translateAgentSAction("type(text='')");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalizedAction).toBe('type');
+      expect(result.parsed).toEqual({
+        action_type: 'type',
+        action_inputs: { content: '' },
+        thought: '',
+        reflection: null,
+      });
+    }
+  });
+
+  it('still returns missing-required-field when type content is absent', () => {
+    const result = translateAgentSAction({
+      action: 'type',
+      action_inputs: {},
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'TRANSLATION_MISSING_REQUIRED_FIELD',
+      message: 'Missing required field: content',
+    });
+  });
+
+  it('preserves optional scroll coordinates in start_box', () => {
+    const result = translateAgentSAction({
+      action: 'scroll',
+      action_inputs: {
+        direction: 'up',
+        point: [45, 90],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalizedAction).toBe('scroll');
+      expect(result.parsed).toEqual({
+        action_type: 'scroll',
+        action_inputs: {
+          direction: 'up',
+          start_box: '[45,90,45,90]',
+        },
+        thought: '',
+        reflection: null,
+      });
+    }
+  });
+
   it('returns TRANSLATION_UNSUPPORTED_ACTION for unknown action', () => {
     const result = translateAgentSAction({
       action: 'open_app',

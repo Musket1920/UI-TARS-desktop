@@ -478,6 +478,38 @@ const resolveSingleBox = (
   return { value: candidates[0] };
 };
 
+const resolveOptionalSingleBox = (
+  inputs: Record<string, unknown>,
+  keys: string[],
+  fieldName: string,
+): { value: string | null } | AgentSActionTranslationError => {
+  const presentKeys = keys.filter((key) => key in inputs);
+  if (presentKeys.length === 0) {
+    return { value: null };
+  }
+
+  const resolved = resolveSingleBox(inputs, presentKeys, fieldName);
+  if (isTranslationError(resolved)) {
+    return resolved;
+  }
+
+  return resolved;
+};
+
+const resolveTypeContent = (inputs: Record<string, unknown>): string | null => {
+  for (const key of ['content', 'text', 'value']) {
+    if (!(key in inputs)) {
+      continue;
+    }
+
+    if (typeof inputs[key] === 'string') {
+      return inputs[key];
+    }
+  }
+
+  return null;
+};
+
 const parsedResult = (params: {
   actionType: string;
   actionInputs: ActionInputs;
@@ -564,12 +596,9 @@ export const translateAgentSAction = (
   }
 
   if (normalizedAction === 'type') {
-    const content =
-      asNonEmptyString(inputs.content) ??
-      asNonEmptyString(inputs.text) ??
-      asNonEmptyString(inputs.value);
+    const content = resolveTypeContent(inputs);
 
-    if (!content) {
+    if (content === null) {
       return errorResult(
         'TRANSLATION_MISSING_REQUIRED_FIELD',
         'Missing required field: content',
@@ -638,12 +667,26 @@ export const translateAgentSAction = (
       );
     }
 
+    const start = resolveOptionalSingleBox(
+      inputs,
+      ['start_box', 'point', 'start_point', 'bbox', 'box'],
+      'start_box',
+    );
+    if (isTranslationError(start)) {
+      return start;
+    }
+
+    const actionInputs: ActionInputs = { direction };
+    if (start.value) {
+      actionInputs.start_box = start.value;
+    }
+
     return {
       ok: true,
       normalizedAction,
       parsed: parsedResult({
         actionType: 'scroll',
-        actionInputs: { direction },
+        actionInputs,
         thought,
         reflection,
       }),
