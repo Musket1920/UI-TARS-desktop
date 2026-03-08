@@ -218,6 +218,45 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('returns runtime error state when provider config is missing before the first turn', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = createFakeSidecarManager();
+    const invalidSettings = {
+      ...createSettings(),
+      vlmProvider: undefined,
+    } satisfies LocalStore;
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: invalidSettings,
+      operator,
+      instruction: 'trigger missing provider config',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: failingFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_TURN_REQUEST_FAILED');
+    expect(result.error?.step).toBe(0);
+    expect(result.error?.message).toContain(
+      'Missing required Agent-S setting: vlmProvider',
+    );
+    expect(result.stepsExecuted).toBe(0);
+    expect(sidecarManager.health).not.toHaveBeenCalled();
+    expect(operator.screenshot).not.toHaveBeenCalled();
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('rejects malformed predict payload with AGENT_S_PREDICTION_MALFORMED', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();

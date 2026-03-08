@@ -399,26 +399,27 @@ export const runAgentSRuntimeLoop = async (
 
   const maxSteps = normalizeMaxSteps(args.settings);
   const turnTimeoutMs = normalizeTurnTimeoutMs(args.settings);
-  const providerConfig = mapProviderToAgentSConfig(args.settings);
-
-  logger.info('[agentS runtime] using provider config', {
-    provider: providerConfig.provider,
-    model: providerConfig.model,
-    config: redactSensitiveConfig(providerConfig),
-  });
-
-  appendState(args.setState, args.getState, {
-    status: StatusEnum.RUNNING,
-    restUserData: buildRuntimeMeta({
-      instruction: args.instruction,
-      modelName: providerConfig.model,
-      now: deps.now(),
-    }),
-  });
 
   setAgentSActive(true);
 
   try {
+    const providerConfig = mapProviderToAgentSConfig(args.settings);
+
+    logger.info('[agentS runtime] using provider config', {
+      provider: providerConfig.provider,
+      model: providerConfig.model,
+      config: redactSensitiveConfig(providerConfig),
+    });
+
+    appendState(args.setState, args.getState, {
+      status: StatusEnum.RUNNING,
+      restUserData: buildRuntimeMeta({
+        instruction: args.instruction,
+        modelName: providerConfig.model,
+        now: deps.now(),
+      }),
+    });
+
     const sidecarStatus = await deps.sidecarManager.health({ probe: true });
     if (!sidecarStatus.healthy || !sidecarStatus.endpoint) {
       throw runtimeError(
