@@ -330,7 +330,7 @@ const parseInput = (
       );
     }
 
-    const match = segment.match(/^(\w+)(?:\((.*)\))?$/);
+    const match = segment.match(/^(\w+)(?:\(([\s\S]*)\))?$/);
 
     if (!match) {
       return errorResult(

@@ -134,6 +134,19 @@ describe('action-translator', () => {
     }
   });
 
+  it('accepts literal newlines inside quoted type text', () => {
+    const result = translateAgentSAction('type(text="hello\nworld")');
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.normalizedAction).toBe('type');
+      expect(result.parsed.action_inputs).toEqual({
+        content: 'hello\nworld',
+      });
+    }
+  });
+
   it('accepts escaped quotes inside quoted type text', () => {
     const escapedSingleQuote = translateAgentSAction(
       "type(text='it\\'s done')",
