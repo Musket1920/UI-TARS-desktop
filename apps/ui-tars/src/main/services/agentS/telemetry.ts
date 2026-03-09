@@ -34,8 +34,21 @@ type AgentSTelemetryLevel = 'info' | 'warn' | 'error';
 const SENSITIVE_KEY_PATTERN =
   /(api[-_]?key|token|authorization|auth|secret|password|cookie|set-cookie|x[-_]?api[-_]?key)/i;
 const BEARER_TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi;
-const SENSITIVE_ARG_PATTERN =
-  /(api[-_]?key|token|authorization|auth|secret|password)/i;
+const SENSITIVE_ARG_FLAG_PATTERN =
+  /^--?(api[-_]?key|token|authorization|auth|secret|password)$/i;
+
+const isSensitiveArgFlag = (value: string) =>
+  SENSITIVE_ARG_FLAG_PATTERN.test(value);
+
+const splitInlineArgAssignment = (value: string): [string, string] | null => {
+  const separatorIndex = value.indexOf('=');
+
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  return [value.slice(0, separatorIndex), value.slice(separatorIndex + 1)];
+};
 
 const redactStringValue = (value: string): string => {
   if (value.length === 0) {
@@ -120,15 +133,32 @@ export const sanitizeAgentSBoundaryPayload = <T>(value: T): T => {
 
 export const sanitizeCommandArgs = (args: string[]) => {
   const sanitized: string[] = [];
+  let redactNextValue = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const current = args[index];
-    const previous = index > 0 ? args[index - 1] : '';
-    const shouldRedact =
-      SENSITIVE_ARG_PATTERN.test(current) ||
-      (/^--?/.test(previous) && SENSITIVE_ARG_PATTERN.test(previous));
+    const inlineAssignment = splitInlineArgAssignment(current);
 
-    sanitized.push(shouldRedact ? '[REDACTED]' : current);
+    if (inlineAssignment && isSensitiveArgFlag(inlineAssignment[0])) {
+      sanitized.push(`${inlineAssignment[0]}=[REDACTED]`);
+      redactNextValue = false;
+      continue;
+    }
+
+    if (redactNextValue) {
+      if (/^--?/.test(current)) {
+        redactNextValue = isSensitiveArgFlag(current);
+        sanitized.push(current);
+        continue;
+      }
+
+      sanitized.push('[REDACTED]');
+      redactNextValue = false;
+      continue;
+    }
+
+    redactNextValue = isSensitiveArgFlag(current);
+    sanitized.push(current);
   }
 
   return sanitized;

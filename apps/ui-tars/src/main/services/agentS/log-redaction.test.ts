@@ -82,11 +82,11 @@ describe('log-redaction', () => {
     });
   });
 
-  it('redacts command args while preserving non-sensitive args', () => {
+  it('redacts sensitive command arg values while keeping flag names visible', () => {
     const sanitized = sanitizeCommandArgs([
       '-m',
       'agent_s',
-      '--api_key',
+      '--api-key',
       'my-secret-key',
       '--token',
       'another-token',
@@ -97,12 +97,28 @@ describe('log-redaction', () => {
     expect(sanitized).toEqual([
       '-m',
       'agent_s',
+      '--api-key',
       '[REDACTED]',
-      '[REDACTED]',
-      '[REDACTED]',
+      '--token',
       '[REDACTED]',
       '--port',
       '10800',
+    ]);
+  });
+
+  it('does not redact ordinary path-like values that contain auth substrings', () => {
+    const sanitized = sanitizeCommandArgs([
+      '--cwd',
+      '/tmp/authoring/session-data',
+      '--profile',
+      'default',
+    ]);
+
+    expect(sanitized).toEqual([
+      '--cwd',
+      '/tmp/authoring/session-data',
+      '--profile',
+      'default',
     ]);
   });
 
