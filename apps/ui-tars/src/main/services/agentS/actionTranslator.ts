@@ -79,6 +79,8 @@ const DIRECTION_ALIASES: Record<string, 'up' | 'down' | 'left' | 'right'> = {
   downward: 'down',
 };
 
+const ACTION_CALL_PATTERN = /^(\w+)(?:\((.*)\))?$/s;
+
 const errorResult = (
   code: TranslationErrorCode,
   message: string,
@@ -330,7 +332,7 @@ const parseInput = (
       );
     }
 
-    const match = segment.match(/^(\w+)(?:\(([\s\S]*)\))?$/);
+    const match = segment.match(ACTION_CALL_PATTERN);
 
     if (!match) {
       return errorResult(
