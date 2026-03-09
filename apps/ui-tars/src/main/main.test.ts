@@ -9,7 +9,10 @@ type StartAgentSSidecarInBackground = (
   logError?: (message: string, error: unknown) => void,
 ) => void;
 
-const extractConstArrowFunction = <T>(name: string): T => {
+const extractConstArrowFunction = <T>(
+  name: string,
+  scope: Record<string, unknown> = {},
+): T => {
   const source = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
   const signature = `const ${name} =`;
   const start = source.indexOf(signature);
@@ -63,14 +66,24 @@ const extractConstArrowFunction = <T>(name: string): T => {
     },
   }).outputText;
   const module = { exports: {} as Record<string, T> };
+  const scopeNames = Object.keys(scope);
+  const scopeValues = Object.values(scope);
 
-  new Function('module', 'exports', transpiled)(module, module.exports);
+  new Function(...scopeNames, 'module', 'exports', transpiled)(
+    ...scopeValues,
+    module,
+    module.exports,
+  );
 
   return module.exports[name];
 };
 
-const extractParseSidecarArgs = (): ParseSidecarArgs => {
-  return extractConstArrowFunction<ParseSidecarArgs>('parseSidecarArgs');
+const extractParseSidecarArgs = (logger: {
+  warn: (message: string, details?: unknown) => void;
+}): ParseSidecarArgs => {
+  return extractConstArrowFunction<ParseSidecarArgs>('parseSidecarArgs', {
+    logger,
+  });
 };
 
 const extractStartAgentSSidecarInBackground =
@@ -81,35 +94,66 @@ const extractStartAgentSSidecarInBackground =
   };
 
 describe('parseSidecarArgs', () => {
-  const parseSidecarArgs = extractParseSidecarArgs();
-
   it('keeps quoted values with spaces as a single token', () => {
+    const logger = { warn: vi.fn() };
+    const parseSidecarArgs = extractParseSidecarArgs(logger);
+
     expect(
       parseSidecarArgs('--flag "value with spaces" --other "two words"'),
     ).toEqual(['--flag', 'value with spaces', '--other', 'two words']);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('preserves leading and trailing whitespace inside quoted args', () => {
+    const logger = { warn: vi.fn() };
+    const parseSidecarArgs = extractParseSidecarArgs(logger);
+
     expect(parseSidecarArgs("--model-id '  model v2  '")).toEqual([
       '--model-id',
       '  model v2  ',
     ]);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('keeps simple unquoted arg strings unchanged', () => {
+    const logger = { warn: vi.fn() };
+    const parseSidecarArgs = extractParseSidecarArgs(logger);
+
     expect(parseSidecarArgs('alpha beta  gamma')).toEqual([
       'alpha',
       'beta',
       'gamma',
     ]);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('preserves empty input handling and active-quote escapes', () => {
+    const logger = { warn: vi.fn() };
+    const parseSidecarArgs = extractParseSidecarArgs(logger);
+
     expect(parseSidecarArgs('   ')).toEqual([]);
     expect(parseSidecarArgs('--message "say \\\"hi\\\""')).toEqual([
       '--message',
       'say "hi"',
     ]);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('warns when a quoted arg is unterminated while preserving parsed tokens', () => {
+    const logger = { warn: vi.fn() };
+    const parseSidecarArgs = extractParseSidecarArgs(logger);
+
+    expect(parseSidecarArgs('--flag "value with spaces')).toEqual([
+      '--flag',
+      'value with spaces',
+    ]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[agentS sidecar] AGENT_S_SIDECAR_ARGS ended with an unterminated quote; continuing with parsed args',
+      {
+        quote: '"',
+        rawArgs: '--flag "value with spaces',
+      },
+    );
   });
 });
 
