@@ -3,6 +3,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
+import os from 'os';
 import { LocalBrowser } from '@agent-infra/browser';
 import { ConsoleLogger, Logger, defaultLogger } from '@agent-infra/logger';
 import { Operator, parseBoxToScreenCoords } from '@ui-tars/sdk/core';
@@ -392,11 +393,11 @@ export class BrowserOperator extends Operator {
 
     if (rawContent === '') {
       this.logger.info('Clearing selected content');
-      await shortcuts(
-        page,
-        [KEY_MAPPINGS.control, KEY_MAPPINGS.a],
-        this.options.browserType,
-      );
+      const selectAllModifier: KeyInput =
+        os.platform() === 'darwin' ? 'Meta' : 'Control';
+      await page.keyboard.down(selectAllModifier);
+      await page.keyboard.press('KeyA');
+      await page.keyboard.up(selectAllModifier);
       await this.delay(50);
       await page.keyboard.press('Backspace');
       return;

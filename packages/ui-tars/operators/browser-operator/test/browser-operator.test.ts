@@ -2,6 +2,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
+import os from 'os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLogger = vi.hoisted(() => ({
@@ -41,14 +42,15 @@ vi.mock('../src/shortcuts', () => ({
 }));
 
 import { BrowserOperator } from '../src/browser-operator';
-import { KEY_MAPPINGS } from '../src/key-map';
 import { shortcuts } from '../src/shortcuts';
 
 function createPage() {
   return {
     keyboard: {
+      down: vi.fn(),
       press: vi.fn(),
       type: vi.fn(),
+      up: vi.fn(),
     },
   };
 }
@@ -70,15 +72,14 @@ describe('BrowserOperator handleType', () => {
   it('selects all before clearing exact empty-string content', async () => {
     const page = createPage();
     const operator = createOperator(page);
+    const expectedModifier = os.platform() === 'darwin' ? 'Meta' : 'Control';
 
     await (operator as any).handleType({ content: '' });
 
-    expect(shortcuts).toHaveBeenCalledWith(
-      page,
-      [KEY_MAPPINGS.control, KEY_MAPPINGS.a],
-      'chrome',
-    );
-    expect(page.keyboard.press).toHaveBeenCalledWith('Backspace');
+    expect(page.keyboard.down).toHaveBeenCalledWith(expectedModifier);
+    expect(page.keyboard.press).toHaveBeenNthCalledWith(1, 'KeyA');
+    expect(page.keyboard.up).toHaveBeenCalledWith(expectedModifier);
+    expect(page.keyboard.press).toHaveBeenNthCalledWith(2, 'Backspace');
     expect(page.keyboard.type).not.toHaveBeenCalled();
   });
 
