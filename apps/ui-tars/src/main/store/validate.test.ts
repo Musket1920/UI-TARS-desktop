@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { validatePreset } from './validate';
 import {
   AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
-  AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
+  AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
   AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
 } from './safetyPolicy';
 import {
@@ -70,20 +70,20 @@ describe('validatePreset schema for Agent-S settings', () => {
     );
   });
 
-  it('accepts loop intervals at the runtime safety floor', () => {
+  it('accepts loop intervals at the dedicated loop interval safety floor', () => {
     const validated = validatePreset({
       ...basePreset(),
-      loopIntervalInMs: AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
+      loopIntervalInMs: AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
     });
 
-    expect(validated.loopIntervalInMs).toBe(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS);
+    expect(validated.loopIntervalInMs).toBe(AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS);
   });
 
-  it('rejects loop intervals below the runtime safety floor', () => {
+  it('rejects loop intervals below the dedicated loop interval safety floor', () => {
     expect(() =>
       validatePreset({
         ...basePreset(),
-        loopIntervalInMs: AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS - 1,
+        loopIntervalInMs: AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS - 1,
       }),
     ).toThrow(/loopIntervalInMs/);
   });
