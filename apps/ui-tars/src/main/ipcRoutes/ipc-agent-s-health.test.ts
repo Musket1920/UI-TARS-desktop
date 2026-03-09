@@ -24,10 +24,22 @@ const {
   sidecarHealthMock,
   sidecarGetStatusMock,
   sidecarGetCircuitBreakerStatusMock,
+  loggerWarnMock,
 } = vi.hoisted(() => ({
   sidecarHealthMock: vi.fn(),
   sidecarGetStatusMock: vi.fn(),
   sidecarGetCircuitBreakerStatusMock: vi.fn(),
+  loggerWarnMock: vi.fn(),
+}));
+
+vi.mock('@main/logger', () => ({
+  logger: {
+    warn: loggerWarnMock,
+    info: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    log: vi.fn(),
+  },
 }));
 
 vi.mock('@main/services/runAgent', () => ({
@@ -245,8 +257,9 @@ describe('ipc-agent-s-health route payload', () => {
     expect(payload.timestamp).toBe(1700000004444);
   });
 
-  it('falls back to current status when probe throws', async () => {
-    sidecarHealthMock.mockRejectedValue(new Error('probe failed'));
+  it('warns and falls back to current status when probe throws', async () => {
+    const error = new Error('probe failed');
+    sidecarHealthMock.mockRejectedValue(error);
     sidecarGetStatusMock.mockReturnValue({
       state: 'unhealthy',
       mode: 'embedded',
@@ -265,6 +278,10 @@ describe('ipc-agent-s-health route payload', () => {
     expect(payload.timestamp).toBe(1700000001234);
     expect(sidecarHealthMock).toHaveBeenCalledWith({ probe: true });
     expect(sidecarGetStatusMock).toHaveBeenCalledTimes(1);
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      'Agent-S health probe failed, falling back to cached status:',
+      error,
+    );
   });
 
   it('maps circuit breaker open to deterministic degraded fallback message', async () => {

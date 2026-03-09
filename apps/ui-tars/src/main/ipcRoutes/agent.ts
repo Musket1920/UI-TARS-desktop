@@ -8,6 +8,7 @@ import { store } from '@main/store/create';
 import { SettingStore } from '@main/store/setting';
 import { runAgent } from '@main/services/runAgent';
 import { showWindow } from '@main/window/index';
+import { logger } from '@main/logger';
 
 import { closeScreenMarker } from '@main/window/ScreenMarker';
 import { GUIAgent } from '@ui-tars/sdk';
@@ -190,9 +191,13 @@ export const agentRoute = t.router({
     .input<AgentSHealthRouteInput | void>()
     .handle(async ({ input }) => {
       const sidecarStatus = input?.forceProbe
-        ? await agentSSidecarManager
-            .health({ probe: true })
-            .catch(() => agentSSidecarManager.getStatus())
+        ? await agentSSidecarManager.health({ probe: true }).catch((error) => {
+            logger.warn(
+              'Agent-S health probe failed, falling back to cached status:',
+              error,
+            );
+            return agentSSidecarManager.getStatus();
+          })
         : agentSSidecarManager.getStatus();
       const breaker = agentSSidecarManager.getCircuitBreakerStatus();
       const baseHealthView = buildHealthPresentation(sidecarStatus);

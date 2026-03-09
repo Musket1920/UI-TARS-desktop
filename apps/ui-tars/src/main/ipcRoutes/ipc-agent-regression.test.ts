@@ -36,6 +36,16 @@ const { runAgentMock } = vi.hoisted(() => ({
   runAgentMock: vi.fn(),
 }));
 
+vi.mock('@main/logger', () => ({
+  logger: {
+    warn: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    log: vi.fn(),
+  },
+}));
+
 vi.mock('@main/services/runAgent', () => ({
   runAgent: runAgentMock,
 }));
