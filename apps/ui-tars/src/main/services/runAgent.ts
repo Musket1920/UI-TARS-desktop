@@ -373,7 +373,8 @@ export const runAgent = async (
       const runtimeFailureClass =
         classifyAgentSFailureReason(runtimeFailureCode);
       const shouldRecordRuntimeCircuitFailure =
-        runtimeFailureCode !== 'AGENT_S_MAX_STEPS_REACHED';
+        runtimeFailureCode !== 'AGENT_S_MAX_STEPS_REACHED' &&
+        runtimeFailureCode !== 'AGENT_S_PROVIDER_CONFIG_INVALID';
       const breakerAfterRuntimeFailure = shouldRecordRuntimeCircuitFailure
         ? (agentSSidecarManager.recordCircuitFailure({
             source: 'runtime',

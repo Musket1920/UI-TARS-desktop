@@ -48,6 +48,7 @@ import {
 
 export type AgentSRuntimeErrorCode =
   | 'ACTION_NOT_ALLOWED'
+  | 'AGENT_S_PROVIDER_CONFIG_INVALID'
   | 'AGENT_S_SIDECAR_UNHEALTHY'
   | 'AGENT_S_TURN_TIMEOUT'
   | 'AGENT_S_TURN_REQUEST_FAILED'
@@ -456,7 +457,20 @@ export const runAgentSRuntimeLoop = async (
   const turnTimeoutMs = normalizeTurnTimeoutMs(args.settings);
 
   try {
-    const providerConfig = mapProviderToAgentSConfig(args.settings);
+    const providerConfig = (() => {
+      try {
+        return mapProviderToAgentSConfig(args.settings);
+      } catch (error) {
+        throw runtimeError(
+          {
+            code: 'AGENT_S_PROVIDER_CONFIG_INVALID',
+            message: error instanceof Error ? error.message : String(error),
+            step: 0,
+          },
+          error,
+        );
+      }
+    })();
 
     logger.info('[agentS runtime] using provider config', {
       provider: providerConfig.provider,

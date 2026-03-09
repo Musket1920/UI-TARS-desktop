@@ -119,6 +119,9 @@ vi.mock('./agentS/sidecarManager', () => ({
     if (!reasonCode) {
       return 'degraded_fallback';
     }
+    if (reasonCode === 'AGENT_S_PROVIDER_CONFIG_INVALID') {
+      return 'degraded_fallback';
+    }
     if (reasonCode === 'AGENT_S_PREDICTION_MALFORMED') {
       return 'invalid_output';
     }
@@ -513,6 +516,67 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
       circuitBreakerState: 'closed',
       circuitConsecutiveFailures: 0,
       reasonCode: 'AGENT_S_MAX_STEPS_REACHED',
+    });
+    expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
+  });
+
+  it('does not poison the circuit breaker when Agent-S runtime fails on provider config', async () => {
+    const { setState, getState } = createStateHandlers({
+      status: StatusEnum.ERROR,
+      errorMsg: 'stale runtime error',
+    });
+    sidecarHealthMock.mockResolvedValue({
+      state: 'running',
+      mode: 'embedded',
+      healthy: true,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 777,
+      checkedAt: 1_000,
+      lastHeartbeatAt: 1_000,
+    });
+    runAgentSRuntimeLoopMock.mockResolvedValue({
+      status: StatusEnum.ERROR,
+      stepsExecuted: 0,
+      error: {
+        code: 'AGENT_S_PROVIDER_CONFIG_INVALID',
+        message: 'Missing required Agent-S setting: vlmProvider',
+        step: 0,
+      },
+    });
+    guiAgentRunMock.mockImplementationOnce(async () => {
+      expect(getState()).toMatchObject({
+        status: StatusEnum.RUNNING,
+        errorMsg: null,
+      });
+    });
+
+    await runAgent(
+      setState as unknown as RunAgentSetState,
+      getState as unknown as RunAgentGetState,
+    );
+
+    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(setState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: StatusEnum.RUNNING,
+        errorMsg: null,
+      }),
+    );
+
+    const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
+      (call) =>
+        call[0] === 'agent_s.fallback.triggered' &&
+        call[1]?.source === 'agent_s.dispatcher' &&
+        call[1]?.reasonCode === 'AGENT_S_PROVIDER_CONFIG_INVALID',
+    );
+
+    expect(fallbackEvent?.[1]).toMatchObject({
+      circuitBreakerState: 'closed',
+      circuitConsecutiveFailures: 0,
+      failureClass: 'degraded_fallback',
+      reasonCode: 'AGENT_S_PROVIDER_CONFIG_INVALID',
     });
     expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
   });
