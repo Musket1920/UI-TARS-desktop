@@ -403,11 +403,7 @@ export class BrowserOperator extends Operator {
       return;
     }
 
-    const content = rawContent.trim();
-    if (!content) {
-      this.logger.warn('No content to type');
-      return;
-    }
+    const content = rawContent;
 
     this.logger.info('Typing content:', content);
     const stripContent = content.replace(/\\n$/, '').replace(/\n$/, '');

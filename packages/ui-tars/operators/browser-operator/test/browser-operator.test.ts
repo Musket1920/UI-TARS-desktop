@@ -96,14 +96,17 @@ describe('BrowserOperator handleType', () => {
     expect(page.keyboard.press).not.toHaveBeenCalledWith('Backspace');
   });
 
-  it('keeps whitespace-only content on the existing no-op path', async () => {
+  it('types whitespace-only non-empty content as provided', async () => {
     const page = createPage();
     const operator = createOperator(page);
+    const content = ' \t ';
 
-    await (operator as any).handleType({ content: '   ' });
+    await (operator as any).handleType({ content });
 
     expect(shortcuts).not.toHaveBeenCalled();
-    expect(page.keyboard.type).not.toHaveBeenCalled();
-    expect(page.keyboard.press).not.toHaveBeenCalled();
+    expect(page.keyboard.type).toHaveBeenCalledWith(content, {
+      delay: expect.any(Number),
+    });
+    expect(page.keyboard.press).not.toHaveBeenCalledWith('Backspace');
   });
 });
