@@ -176,6 +176,46 @@ const createTimerDeps = () => {
   };
 };
 
+const createAbortablePendingFetch = () => {
+  let startedResolve: () => void = () => {};
+  const started = new Promise<void>((resolve) => {
+    startedResolve = resolve;
+  });
+  let capturedSignal: AbortSignal | null = null;
+
+  const fetchMock: typeof fetch = async (_input, init) => {
+    capturedSignal = init?.signal ?? null;
+    startedResolve();
+
+    return await new Promise<Response>((_resolve, reject) => {
+      const signal = capturedSignal;
+
+      if (!signal) {
+        reject(new Error('missing abort signal'));
+        return;
+      }
+
+      const abortError =
+        typeof DOMException !== 'undefined'
+          ? new DOMException('Aborted', 'AbortError')
+          : new Error('aborted');
+
+      const onAbort = () => {
+        signal.removeEventListener('abort', onAbort);
+        reject(abortError);
+      };
+
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  };
+
+  return {
+    fetchMock,
+    started,
+    getSignal: () => capturedSignal,
+  };
+};
+
 describe('agent-s-runtime runAgentSRuntimeLoop', () => {
   beforeEach(() => {
     translateAgentSActionMock.mockReset();
@@ -644,6 +684,199 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(
       history.some((state) => state.status === StatusEnum.USER_STOPPED),
     ).toBe(true);
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('classifies an in-flight predict as AGENT_S_TURN_TIMEOUT when no user abort is present', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const timers = createTimerDeps();
+    const operator = createOperator();
+    const pendingFetch = createAbortablePendingFetch();
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: {
+        ...createSettings(),
+        agentSTurnTimeoutMs: 1_000,
+      },
+      operator,
+      instruction: 'timeout pending predict',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: pendingFetch.fetchMock,
+        sidecarManager,
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        now: () => 1_234,
+      },
+    });
+
+    await pendingFetch.started;
+
+    const timeoutTimer = timers.scheduled.find((timer) => timer.ms === 1_000);
+
+    expect(timeoutTimer).toBeDefined();
+    expect(pendingFetch.getSignal()).not.toBeNull();
+
+    timeoutTimer?.callback();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_TURN_TIMEOUT');
+    expect(result.error?.step).toBe(1);
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(
+      history.some((state) => state.status === StatusEnum.USER_STOPPED),
+    ).toBe(false);
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('prefers USER_STOPPED when user abort races with turn timeout handling', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const timers = createTimerDeps();
+    const operator = createOperator();
+    const abortController = new AbortController();
+    const pendingFetch = createAbortablePendingFetch();
+
+    setState({
+      ...getState(),
+      abortController,
+    });
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: {
+        ...createSettings(),
+        agentSTurnTimeoutMs: 1_000,
+      },
+      operator,
+      instruction: 'race timeout with user stop',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: pendingFetch.fetchMock,
+        sidecarManager,
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        now: () => 1_234,
+      },
+    });
+
+    await pendingFetch.started;
+
+    const timeoutTimer = timers.scheduled.find((timer) => timer.ms === 1_000);
+
+    expect(timeoutTimer).toBeDefined();
+    expect(pendingFetch.getSignal()).not.toBeNull();
+
+    timeoutTimer?.callback();
+    abortController.abort();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.USER_STOPPED);
+    expect(result.error).toBeUndefined();
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(
+      history.some((state) => state.status === StatusEnum.USER_STOPPED),
+    ).toBe(true);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      false,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('prefers USER_STOPPED when external abort is already set before timeout abort handling resolves', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const timers = createTimerDeps();
+    const operator = createOperator();
+    const abortController = new AbortController();
+
+    setState({
+      ...getState(),
+      abortController,
+    });
+
+    let startedResolve: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      startedResolve = resolve;
+    });
+
+    const pendingFetch: typeof fetch = async (_input, init) => {
+      const signal = init?.signal;
+
+      startedResolve();
+
+      return await new Promise<Response>((_resolve, reject) => {
+        if (!signal) {
+          reject(new Error('missing abort signal'));
+          return;
+        }
+
+        const abortError =
+          typeof DOMException !== 'undefined'
+            ? new DOMException('Aborted', 'AbortError')
+            : new Error('aborted');
+
+        const onAbort = () => {
+          signal.removeEventListener('abort', onAbort);
+          void Promise.resolve().then(() => {
+            reject(abortError);
+          });
+        };
+
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+    };
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: {
+        ...createSettings(),
+        agentSTurnTimeoutMs: 1_000,
+      },
+      operator,
+      instruction: 'race timeout with already-aborted user stop',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: pendingFetch,
+        sidecarManager,
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        now: () => 1_234,
+      },
+    });
+
+    await started;
+
+    const timeoutTimer = timers.scheduled.find((timer) => timer.ms === 1_000);
+
+    expect(timeoutTimer).toBeDefined();
+
+    timeoutTimer?.callback();
+    abortController.abort();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.USER_STOPPED);
+    expect(result.error).toBeUndefined();
+    expect(result.error?.code).not.toBe('AGENT_S_TURN_TIMEOUT');
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(
+      history.some((state) => state.status === StatusEnum.USER_STOPPED),
+    ).toBe(true);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      false,
+    );
     expect(isAgentSActive()).toBe(false);
   });
 

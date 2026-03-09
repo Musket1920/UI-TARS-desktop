@@ -397,6 +397,12 @@ const requestSidecarPrediction = async (
     return parsed;
   } catch (error) {
     if (controller.signal.aborted) {
+      const externalAbortRequested = params.abortSignal?.aborted === true;
+
+      if (externalAbortRequested || abortCause === 'user') {
+        throw new AgentSRuntimeStoppedError(params.step);
+      }
+
       if (abortCause === 'timeout') {
         const timeoutCorrelation = params.correlation
           ? { ...params.correlation, turnId: String(params.step) }
@@ -420,10 +426,6 @@ const requestSidecarPrediction = async (
           message: `Agent-S turn timed out in ${params.turnTimeoutMs}ms`,
           step: params.step,
         });
-      }
-
-      if (abortCause === 'user' || params.abortSignal?.aborted) {
-        throw new AgentSRuntimeStoppedError(params.step);
       }
     }
 
