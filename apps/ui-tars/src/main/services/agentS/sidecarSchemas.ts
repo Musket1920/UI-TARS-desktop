@@ -40,7 +40,7 @@ const ActionLikeSchema = z.union([
 
 type ActionLike = z.infer<typeof ActionLikeSchema>;
 
-const hasActionSource = (value: {
+const countActionSources = (value: {
   actions?: ActionLike[];
   action?: ActionLike;
   nextAction?: ActionLike;
@@ -48,15 +48,47 @@ const hasActionSource = (value: {
   code?: ActionLike;
   prediction?: ActionLike;
 }) => {
-  return (
-    (Array.isArray(value.actions) && value.actions.length > 0) ||
-    value.action !== undefined ||
-    value.nextAction !== undefined ||
-    value.next_action !== undefined ||
-    value.code !== undefined ||
-    value.prediction !== undefined
-  );
+  let count = 0;
+
+  if (Array.isArray(value.actions) && value.actions.length > 0) {
+    count += 1;
+  }
+  if (value.action !== undefined) {
+    count += 1;
+  }
+  if (value.nextAction !== undefined) {
+    count += 1;
+  }
+  if (value.next_action !== undefined) {
+    count += 1;
+  }
+  if (value.code !== undefined) {
+    count += 1;
+  }
+  if (value.prediction !== undefined) {
+    count += 1;
+  }
+
+  return count;
 };
+
+const hasActionSource = (value: {
+  actions?: ActionLike[];
+  action?: ActionLike;
+  nextAction?: ActionLike;
+  next_action?: ActionLike;
+  code?: ActionLike;
+  prediction?: ActionLike;
+}) => countActionSources(value) > 0;
+
+const hasMultipleActionSources = (value: {
+  actions?: ActionLike[];
+  action?: ActionLike;
+  nextAction?: ActionLike;
+  next_action?: ActionLike;
+  code?: ActionLike;
+  prediction?: ActionLike;
+}) => countActionSources(value) > 1;
 
 const PredictionCandidateSchema = z
   .object({
@@ -117,6 +149,17 @@ const HealthyPayloadSchema = z.union([
 type PredictionCandidate = z.infer<typeof PredictionCandidateSchema>;
 type PredictionEnvelope = z.infer<typeof PredictionEnvelopeSchema>;
 
+const predictionSourcePriority: ReadonlyArray<
+  (candidate: PredictionCandidate) => ActionLike | undefined
+> = [
+  (candidate) => candidate.actions?.[0],
+  (candidate) => candidate.action,
+  (candidate) => candidate.nextAction,
+  (candidate) => candidate.next_action,
+  (candidate) => candidate.code,
+  (candidate) => candidate.prediction,
+];
+
 export type SidecarPredictionResult = {
   action: AgentSActionLikeInput;
   predictionText: string;
@@ -125,29 +168,14 @@ export type SidecarPredictionResult = {
 const pickPredictionFromCandidate = (
   candidate: PredictionCandidate,
 ): SidecarPredictionResult | null => {
-  const actionSources: ActionLike[] = [];
+  // If multiple action-like sources are present, preserve the legacy
+  // first-source-wins behavior by checking them in this explicit order.
+  for (const pickSource of predictionSourcePriority) {
+    const source = pickSource(candidate);
+    if (source === undefined) {
+      continue;
+    }
 
-  if (candidate.actions?.length) {
-    actionSources.push(candidate.actions[0]);
-  }
-
-  if (candidate.action !== undefined) {
-    actionSources.push(candidate.action);
-  }
-  if (candidate.nextAction !== undefined) {
-    actionSources.push(candidate.nextAction);
-  }
-  if (candidate.next_action !== undefined) {
-    actionSources.push(candidate.next_action);
-  }
-  if (candidate.code !== undefined) {
-    actionSources.push(candidate.code);
-  }
-  if (candidate.prediction !== undefined) {
-    actionSources.push(candidate.prediction);
-  }
-
-  for (const source of actionSources) {
     return {
       action: source,
       predictionText:
@@ -165,15 +193,22 @@ const pickPredictionFromCandidate = (
 export const parseSidecarPredictionPayload = (
   payload: unknown,
 ): SidecarPredictionResult | null => {
-  const direct = ActionLikeSchema.safeParse(payload);
-  if (direct.success) {
-    return {
-      action: direct.data,
-      predictionText:
-        typeof direct.data === 'string'
-          ? direct.data
-          : JSON.stringify(direct.data),
-    };
+  const treatAsMultiSourceEnvelope =
+    typeof payload === 'object' &&
+    payload !== null &&
+    hasMultipleActionSources(payload as PredictionCandidate);
+
+  if (!treatAsMultiSourceEnvelope) {
+    const direct = ActionLikeSchema.safeParse(payload);
+    if (direct.success) {
+      return {
+        action: direct.data,
+        predictionText:
+          typeof direct.data === 'string'
+            ? direct.data
+            : JSON.stringify(direct.data),
+      };
+    }
   }
 
   const envelope = PredictionEnvelopeSchema.safeParse(payload);
