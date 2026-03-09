@@ -148,11 +148,7 @@ describe('parseSidecarArgs', () => {
       'value with spaces',
     ]);
     expect(logger.warn).toHaveBeenCalledWith(
-      '[agentS sidecar] AGENT_S_SIDECAR_ARGS ended with an unterminated quote; continuing with parsed args',
-      {
-        quote: '"',
-        rawArgs: '--flag "value with spaces',
-      },
+      '[agentS sidecar] AGENT_S_SIDECAR_ARGS ended with an unterminated double quote; arguments may be incorrect',
     );
   });
 });

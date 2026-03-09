@@ -96,17 +96,16 @@ const parseSidecarArgs = (rawArgs: string | undefined): string[] => {
     currentArg += char;
   }
 
+  pushCurrentArg();
+
   if (activeQuote) {
+    const quoteType = activeQuote === '"' ? 'double' : 'single';
     logger.warn(
-      '[agentS sidecar] AGENT_S_SIDECAR_ARGS ended with an unterminated quote; continuing with parsed args',
-      {
-        quote: activeQuote,
-        rawArgs,
-      },
+      '[agentS sidecar] AGENT_S_SIDECAR_ARGS ended with an unterminated ' +
+        quoteType +
+        ' quote; arguments may be incorrect',
     );
   }
-
-  pushCurrentArg();
 
   return args;
 };
