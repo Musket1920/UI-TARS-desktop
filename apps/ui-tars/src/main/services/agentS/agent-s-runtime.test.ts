@@ -368,7 +368,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     });
 
     expect(result.status).toBe(StatusEnum.ERROR);
-    expect(result.error?.code).toBe('AGENT_S_PROVIDER_CONFIG_INVALID');
+    expect(result.error?.code).toBe('AGENT_S_CONFIG_ERROR');
     expect(result.error?.step).toBe(0);
     expect(result.error?.message).toContain(
       'Missing required Agent-S setting: vlmProvider',
@@ -408,7 +408,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     });
 
     expect(result.status).toBe(StatusEnum.ERROR);
-    expect(result.error?.code).toBe('AGENT_S_PROVIDER_CONFIG_INVALID');
+    expect(result.error?.code).toBe('AGENT_S_CONFIG_ERROR');
     expect(result.error?.step).toBe(0);
     expect(result.error?.message).toContain(
       'Unsupported Agent-S provider mapping for vlmProvider: not-a-real-provider',

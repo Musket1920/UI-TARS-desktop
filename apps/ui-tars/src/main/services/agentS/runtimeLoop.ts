@@ -48,7 +48,7 @@ import {
 
 export type AgentSRuntimeErrorCode =
   | 'ACTION_NOT_ALLOWED'
-  | 'AGENT_S_PROVIDER_CONFIG_INVALID'
+  | 'AGENT_S_CONFIG_ERROR'
   | 'AGENT_S_SIDECAR_UNHEALTHY'
   | 'AGENT_S_TURN_TIMEOUT'
   | 'AGENT_S_TURN_REQUEST_FAILED'
@@ -463,7 +463,7 @@ export const runAgentSRuntimeLoop = async (
       } catch (error) {
         throw runtimeError(
           {
-            code: 'AGENT_S_PROVIDER_CONFIG_INVALID',
+            code: 'AGENT_S_CONFIG_ERROR',
             message: error instanceof Error ? error.message : String(error),
             step: 0,
           },

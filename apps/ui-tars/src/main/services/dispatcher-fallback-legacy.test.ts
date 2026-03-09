@@ -119,7 +119,7 @@ vi.mock('./agentS/sidecarManager', () => ({
     if (!reasonCode) {
       return 'degraded_fallback';
     }
-    if (reasonCode === 'AGENT_S_PROVIDER_CONFIG_INVALID') {
+    if (reasonCode === 'AGENT_S_CONFIG_ERROR') {
       return 'degraded_fallback';
     }
     if (reasonCode === 'AGENT_S_PREDICTION_MALFORMED') {
@@ -538,7 +538,7 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
       status: StatusEnum.ERROR,
       stepsExecuted: 0,
       error: {
-        code: 'AGENT_S_PROVIDER_CONFIG_INVALID',
+        code: 'AGENT_S_CONFIG_ERROR',
         message: 'Missing required Agent-S setting: vlmProvider',
         step: 0,
       },
@@ -569,14 +569,14 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
       (call) =>
         call[0] === 'agent_s.fallback.triggered' &&
         call[1]?.source === 'agent_s.dispatcher' &&
-        call[1]?.reasonCode === 'AGENT_S_PROVIDER_CONFIG_INVALID',
+        call[1]?.reasonCode === 'AGENT_S_CONFIG_ERROR',
     );
 
     expect(fallbackEvent?.[1]).toMatchObject({
       circuitBreakerState: 'closed',
       circuitConsecutiveFailures: 0,
       failureClass: 'degraded_fallback',
-      reasonCode: 'AGENT_S_PROVIDER_CONFIG_INVALID',
+      reasonCode: 'AGENT_S_CONFIG_ERROR',
     });
     expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
   });
