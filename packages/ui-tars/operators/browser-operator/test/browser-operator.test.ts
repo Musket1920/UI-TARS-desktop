@@ -69,17 +69,26 @@ describe('BrowserOperator handleType', () => {
     vi.clearAllMocks();
   });
 
-  it('selects all before clearing exact empty-string content', async () => {
+  it('releases the select-all modifier if KeyA throws while clearing exact empty-string content', async () => {
     const page = createPage();
     const operator = createOperator(page);
     const expectedModifier = os.platform() === 'darwin' ? 'Meta' : 'Control';
+    const keyAError = new Error('KeyA failed');
 
-    await (operator as any).handleType({ content: '' });
+    page.keyboard.press.mockRejectedValueOnce(keyAError);
+
+    await expect((operator as any).handleType({ content: '' })).rejects.toThrow(
+      keyAError,
+    );
 
     expect(page.keyboard.down).toHaveBeenCalledWith(expectedModifier);
-    expect(page.keyboard.press).toHaveBeenNthCalledWith(1, 'KeyA');
+    expect(page.keyboard.press).toHaveBeenCalledTimes(1);
+    expect(page.keyboard.press).toHaveBeenCalledWith('KeyA');
     expect(page.keyboard.up).toHaveBeenCalledWith(expectedModifier);
-    expect(page.keyboard.press).toHaveBeenNthCalledWith(2, 'Backspace');
+    expect(page.keyboard.up.mock.invocationCallOrder[0]).toBeGreaterThan(
+      page.keyboard.press.mock.invocationCallOrder[0],
+    );
+    expect(page.keyboard.press).not.toHaveBeenCalledWith('Backspace');
     expect(page.keyboard.type).not.toHaveBeenCalled();
   });
 

@@ -396,8 +396,11 @@ export class BrowserOperator extends Operator {
       const selectAllModifier: KeyInput =
         os.platform() === 'darwin' ? 'Meta' : 'Control';
       await page.keyboard.down(selectAllModifier);
-      await page.keyboard.press('KeyA');
-      await page.keyboard.up(selectAllModifier);
+      try {
+        await page.keyboard.press('KeyA');
+      } finally {
+        await page.keyboard.up(selectAllModifier);
+      }
       await this.delay(50);
       await page.keyboard.press('Backspace');
       return;
