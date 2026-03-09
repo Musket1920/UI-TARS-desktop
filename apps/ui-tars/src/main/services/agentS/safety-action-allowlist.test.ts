@@ -38,6 +38,9 @@ vi.mock('jimp', () => ({
 
 import { runAgentSRuntimeLoop } from './runtimeLoop';
 
+const TINY_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1XcAAAAASUVORK5CYII=';
+
 const createSettings = (): LocalStore =>
   ({
     vlmProvider: VLMProviderV2.ui_tars_1_0,
@@ -121,7 +124,7 @@ describe('safety-action-allowlist runtime guard', () => {
       settings: createSettings(),
       operator: {
         screenshot: vi.fn(async () => ({
-          base64: 'ZmFrZQ==',
+          base64: TINY_PNG_BASE64,
           scaleFactor: 1,
         })),
         execute: executeMock,
@@ -165,7 +168,7 @@ describe('safety-action-allowlist runtime guard', () => {
       settings: createSettings(),
       operator: {
         screenshot: vi.fn(async () => ({
-          base64: 'ZmFrZQ==',
+          base64: TINY_PNG_BASE64,
           scaleFactor: 1,
         })),
         execute: executeMock,

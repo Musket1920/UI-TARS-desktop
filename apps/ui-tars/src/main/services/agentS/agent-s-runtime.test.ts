@@ -10,14 +10,8 @@ import { runAgentSRuntimeLoop } from './runtimeLoop';
 import type { AgentSRuntimeOperator } from './runtimeLoop';
 import { isAgentSActive, setAgentSActive } from './lifecycle';
 
-const { translateAgentSActionMock, jimpFromBuffer } = vi.hoisted(() => ({
+const { translateAgentSActionMock } = vi.hoisted(() => ({
   translateAgentSActionMock: vi.fn(),
-  jimpFromBuffer: vi.fn(async () => ({
-    bitmap: {
-      width: 640,
-      height: 360,
-    },
-  })),
 }));
 
 vi.mock('./actionTranslator', () => ({
@@ -33,11 +27,8 @@ vi.mock('@main/logger', () => ({
   },
 }));
 
-vi.mock('jimp', () => ({
-  Jimp: {
-    fromBuffer: jimpFromBuffer,
-  },
-}));
+const TINY_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1XcAAAAASUVORK5CYII=';
 
 const createSettings = (): LocalStore =>
   ({
@@ -51,7 +42,7 @@ const createSettings = (): LocalStore =>
 
 const createOperator = (): AgentSRuntimeOperator => ({
   screenshot: vi.fn(async () => ({
-    base64: 'ZmFrZQ==',
+    base64: TINY_PNG_BASE64,
     scaleFactor: 1,
   })),
   execute: vi.fn(async () => ({
@@ -188,12 +179,6 @@ const createTimerDeps = () => {
 describe('agent-s-runtime runAgentSRuntimeLoop', () => {
   beforeEach(() => {
     translateAgentSActionMock.mockReset();
-    jimpFromBuffer.mockResolvedValue({
-      bitmap: {
-        width: 640,
-        height: 360,
-      },
-    });
     setAgentSActive(false);
   });
 
@@ -268,7 +253,55 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(result.status).toBe(StatusEnum.END);
     expect(result.stepsExecuted).toBeGreaterThanOrEqual(1);
     expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(operator.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        screenWidth: 1,
+        screenHeight: 1,
+      }),
+    );
     expect(history.some((state) => state.status === StatusEnum.END)).toBe(true);
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('returns AGENT_S_SCREENSHOT_INVALID when screenshot data is not a valid PNG', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi.fn(async () => ({
+        base64: 'ZmFrZQ==',
+        scaleFactor: 1,
+      })),
+      execute: vi.fn(async () => ({
+        status: StatusEnum.END,
+      })),
+    };
+    const predictFetch = vi.fn<typeof fetch>();
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'reject invalid screenshot data',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_SCREENSHOT_INVALID');
+    expect(result.error?.step).toBe(1);
+    expect(result.error?.message).toBe(
+      'Failed to decode screenshot dimensions for Agent-S turn',
+    );
+    expect(predictFetch).not.toHaveBeenCalled();
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
     expect(isAgentSActive()).toBe(false);
   });
 
@@ -621,7 +654,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     const operator: AgentSRuntimeOperator = {
       screenshot: vi
         .fn()
-        .mockResolvedValue({ base64: 'ZmFrZQ==', scaleFactor: 1 }),
+        .mockResolvedValue({ base64: TINY_PNG_BASE64, scaleFactor: 1 }),
       execute: vi
         .fn()
         .mockResolvedValueOnce({ status: StatusEnum.RUNNING })
@@ -768,7 +801,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
       const operator: AgentSRuntimeOperator = {
         screenshot: vi
           .fn()
-          .mockResolvedValue({ base64: 'ZmFrZQ==', scaleFactor: 1 }),
+          .mockResolvedValue({ base64: TINY_PNG_BASE64, scaleFactor: 1 }),
         execute: vi
           .fn()
           .mockResolvedValueOnce({ status: StatusEnum.RUNNING })

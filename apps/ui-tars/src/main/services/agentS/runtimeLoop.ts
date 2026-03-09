@@ -20,8 +20,6 @@ import {
   type ExecuteParams,
   type ScreenshotOutput,
 } from '@ui-tars/sdk/core';
-import { Jimp } from 'jimp';
-
 import { translateAgentSAction } from './actionTranslator';
 import {
   mapProviderToAgentSConfig,
@@ -226,13 +224,36 @@ const waitForLoopInterval = async (
   });
 };
 
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
+const PNG_IHDR_DATA_LENGTH = 13;
+const PNG_DIMENSION_HEADER_LENGTH = 24;
+
 const readImageSize = async (
   base64: string,
 ): Promise<{ width: number; height: number }> => {
-  const image = await Jimp.fromBuffer(Buffer.from(base64, 'base64'));
+  const buffer = Buffer.from(base64, 'base64');
+
+  if (buffer.length < PNG_DIMENSION_HEADER_LENGTH) {
+    throw new Error('PNG header is truncated');
+  }
+
+  if (!buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    throw new Error('Screenshot is not a PNG');
+  }
+
+  if (buffer.readUInt32BE(8) !== PNG_IHDR_DATA_LENGTH) {
+    throw new Error('PNG IHDR chunk is invalid');
+  }
+
+  if (buffer.toString('ascii', 12, 16) !== 'IHDR') {
+    throw new Error('PNG IHDR chunk is missing');
+  }
+
   return {
-    width: image.bitmap.width,
-    height: image.bitmap.height,
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
   };
 };
 
