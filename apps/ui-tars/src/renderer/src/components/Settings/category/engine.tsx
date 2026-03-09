@@ -101,6 +101,15 @@ const STATUS_COPY: Record<AgentSHealthPayload['status'], string> = {
   offline: 'Sidecar is offline',
 };
 
+const ENGINE_MODE_LABEL: Record<EngineMode, string> = {
+  [EngineMode.UITARS]: 'UI-TARS',
+  [EngineMode.AgentS]: 'Agent-S',
+};
+
+export const getEngineModeLabel = (mode: EngineMode) => {
+  return ENGINE_MODE_LABEL[mode];
+};
+
 const toSidecarPortInputValue = (
   port: LocalStore['agentSSidecarPort'],
 ): NonNullable<FormValues['agentSSidecarPort']> => {
@@ -750,7 +759,7 @@ export function EngineSettings({ className }: { className?: string }) {
             {health ? STATUS_COPY[health.status] : 'Status unavailable'}
           </Badge>
           <Badge variant="outline">
-            Mode: {health?.engine.mode ?? EngineMode.UITARS}
+            Mode: {getEngineModeLabel(health?.engine.mode ?? EngineMode.UITARS)}
           </Badge>
           <Badge variant="outline">Runtime: {runtimeRuntimeLabel}</Badge>
           {runtimeStatus && (

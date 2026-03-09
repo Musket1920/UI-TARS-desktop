@@ -89,6 +89,7 @@ vi.mock('lucide-react', () => ({
 import {
   createAgentSStatusLoader,
   getAgentSModeChangePersistDelta,
+  getEngineModeLabel,
   createSettledAgentSFieldPersistScheduler,
   getAgentSPersistEffectInputs,
   getPersistedAgentSFormValues,
@@ -149,6 +150,16 @@ describe('Agent-S settings form reset trigger', () => {
     expect(getPersistedAgentSFormValues(externalAgentSChange)).not.toEqual(
       getPersistedAgentSFormValues(persistedAgentSSettings),
     );
+  });
+});
+
+describe('getEngineModeLabel', () => {
+  it('returns a human-readable label for UI-TARS mode', () => {
+    expect(getEngineModeLabel(EngineMode.UITARS)).toBe('UI-TARS');
+  });
+
+  it('returns a human-readable label for Agent-S mode', () => {
+    expect(getEngineModeLabel(EngineMode.AgentS)).toBe('Agent-S');
   });
 });
 
