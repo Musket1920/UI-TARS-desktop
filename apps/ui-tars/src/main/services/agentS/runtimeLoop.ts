@@ -514,6 +514,8 @@ export const runAgentSRuntimeLoop = async (
       );
     }
 
+    setAgentSActive(true);
+
     appendState(args.setState, args.getState, {
       status: StatusEnum.RUNNING,
       restUserData: buildRuntimeMeta({
@@ -522,8 +524,6 @@ export const runAgentSRuntimeLoop = async (
         now: deps.now(),
       }),
     });
-
-    setAgentSActive(true);
 
     for (let step = 1; step <= maxSteps; step += 1) {
       await ensureAgentSNotPaused(args.getState().abortController?.signal);

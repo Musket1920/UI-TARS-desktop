@@ -223,7 +223,15 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
   });
 
   it('sets RUNNING and active only after sidecar preflight succeeds, then clears active after a successful run', async () => {
-    const { setState, getState, history } = createStateHandlers();
+    const { setState: applyState, getState, history } = createStateHandlers();
+    const runningVisibilitySnapshots: boolean[] = [];
+    const setState = vi.fn((nextState: AppState) => {
+      if (nextState.status === StatusEnum.RUNNING) {
+        runningVisibilitySnapshots.push(isAgentSActive());
+      }
+
+      applyState(nextState);
+    });
     const operator = createOperator();
     const sidecarManager = createDeferredHealthSidecarManager();
 
@@ -283,6 +291,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     sidecarManager.resolveHealth();
     await flushMicrotasks();
 
+    expect(runningVisibilitySnapshots[0]).toBe(true);
     expect(isAgentSActive()).toBe(true);
     expect(history[0]?.status).toBe(StatusEnum.RUNNING);
 
