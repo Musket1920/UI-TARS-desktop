@@ -88,6 +88,7 @@ vi.mock('lucide-react', () => ({
 
 import {
   createAgentSStatusLoader,
+  getAgentSModeChangePersistDelta,
   createSettledAgentSFieldPersistScheduler,
   getAgentSPersistEffectInputs,
   getPersistedAgentSFormValues,
@@ -193,6 +194,51 @@ describe('Agent-S settings persist effect inputs', () => {
     });
 
     expect(externalAgentSChange).not.toEqual(baseInputs);
+  });
+});
+
+describe('getAgentSModeChangePersistDelta', () => {
+  it('flushes sidecar URL and port atomically when a mode change happens mid-edit', () => {
+    expect(
+      getAgentSModeChangePersistDelta({
+        nextValues: {
+          engineMode: EngineMode.AgentS,
+          agentSSidecarMode: AgentSSidecarMode.Remote,
+          agentSSidecarUrl: ' https://draft-sidecar.example.com ',
+          agentSSidecarPort: '65432',
+        },
+        latestSettings: {
+          engineMode: EngineMode.UITARS,
+          agentSSidecarMode: AgentSSidecarMode.Embedded,
+          agentSSidecarUrl: 'https://persisted-sidecar.example.com',
+          agentSSidecarPort: 54321,
+        },
+      }),
+    ).toEqual({
+      engineMode: EngineMode.AgentS,
+      agentSSidecarMode: AgentSSidecarMode.Remote,
+      agentSSidecarUrl: 'https://draft-sidecar.example.com',
+      agentSSidecarPort: 65432,
+    });
+  });
+
+  it('keeps ordinary URL and port edits on the debounced path when modes are unchanged', () => {
+    expect(
+      getAgentSModeChangePersistDelta({
+        nextValues: {
+          engineMode: EngineMode.AgentS,
+          agentSSidecarMode: AgentSSidecarMode.Remote,
+          agentSSidecarUrl: 'https://draft-sidecar.example.com',
+          agentSSidecarPort: '65432',
+        },
+        latestSettings: {
+          engineMode: EngineMode.AgentS,
+          agentSSidecarMode: AgentSSidecarMode.Remote,
+          agentSSidecarUrl: 'https://persisted-sidecar.example.com',
+          agentSSidecarPort: 54321,
+        },
+      }),
+    ).toBeNull();
   });
 });
 

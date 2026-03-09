@@ -130,6 +130,46 @@ export const getAgentSPersistEffectInputs = (
   return inputs;
 };
 
+export const getAgentSModeChangePersistDelta = ({
+  nextValues,
+  latestSettings,
+}: {
+  nextValues: PersistedAgentSFormValues;
+  latestSettings: Partial<LocalStore>;
+}): Partial<LocalStore> | null => {
+  const delta: Partial<LocalStore> = {};
+
+  if (nextValues.engineMode !== latestSettings.engineMode) {
+    delta.engineMode = nextValues.engineMode;
+  }
+
+  if (nextValues.agentSSidecarMode !== latestSettings.agentSSidecarMode) {
+    delta.agentSSidecarMode = nextValues.agentSSidecarMode;
+  }
+
+  if (Object.keys(delta).length === 0) {
+    return null;
+  }
+
+  const normalizedSidecarUrl =
+    nextValues.agentSSidecarUrl === ''
+      ? undefined
+      : nextValues.agentSSidecarUrl.trim();
+  const normalizedSidecarPort = toPersistedSidecarPort(
+    nextValues.agentSSidecarPort,
+  );
+
+  if (normalizedSidecarUrl !== latestSettings.agentSSidecarUrl) {
+    delta.agentSSidecarUrl = normalizedSidecarUrl;
+  }
+
+  if (normalizedSidecarPort !== latestSettings.agentSSidecarPort) {
+    delta.agentSSidecarPort = normalizedSidecarPort;
+  }
+
+  return delta;
+};
+
 const hasMatchingPersistedAgentSFormValues = (
   left: PersistedAgentSFormValues,
   right: PersistedAgentSFormValues,
@@ -458,18 +498,21 @@ export function EngineSettings({ className }: { className?: string }) {
     } = persistEffectInputs;
 
     const persist = async () => {
-      if (
-        persistedEngineMode &&
-        persistedEngineMode !== latestSettingsRef.current.engineMode
-      ) {
-        persistSettingsDelta({ engineMode: persistedEngineMode });
-      }
+      const modeChangePersistDelta = getAgentSModeChangePersistDelta({
+        nextValues: {
+          engineMode: persistedEngineMode,
+          agentSSidecarMode: persistedSidecarMode,
+          agentSSidecarUrl: persistedSidecarUrl,
+          agentSSidecarPort: persistedSidecarPort,
+        },
+        latestSettings: latestSettingsRef.current,
+      });
 
-      if (
-        persistedSidecarMode &&
-        persistedSidecarMode !== latestSettingsRef.current.agentSSidecarMode
-      ) {
-        persistSettingsDelta({ agentSSidecarMode: persistedSidecarMode });
+      if (modeChangePersistDelta) {
+        sidecarUrlPersistScheduler.cancel();
+        sidecarPortPersistScheduler.cancel();
+        persistSettingsDelta(modeChangePersistDelta);
+        return;
       }
 
       const normalizedSidecarUrl =
