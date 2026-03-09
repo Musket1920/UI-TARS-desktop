@@ -679,19 +679,6 @@ export class AgentSSidecarManager {
       return this.getStatus();
     }
 
-    const currentStatus = this.getStatus();
-    if (currentStatus.state === 'running' && currentStatus.healthy) {
-      return {
-        ...currentStatus,
-        state: 'unhealthy',
-        healthy: false,
-        reason: result.reason,
-        httpStatus: result.httpStatus,
-        error: result.error,
-        checkedAt: result.checkedAt,
-      };
-    }
-
     this.updateStatus({
       state: 'unhealthy',
       healthy: false,

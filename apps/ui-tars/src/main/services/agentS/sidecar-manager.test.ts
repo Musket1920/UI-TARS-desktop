@@ -441,7 +441,7 @@ describe('sidecar-manager', () => {
     expect(probed.healthy).toBe(true);
   });
 
-  it('keeps stored running status when an explicit probe fails transiently', async () => {
+  it('updates stored status when an explicit probe fails transiently', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(createHealthyResponse())
@@ -477,10 +477,10 @@ describe('sidecar-manager', () => {
     expect(failedProbe.reason).toBe('health_http_error');
 
     const storedAfterFailedProbe = manager.getStatus();
-    expect(storedAfterFailedProbe.state).toBe('running');
-    expect(storedAfterFailedProbe.healthy).toBe(true);
-    expect(storedAfterFailedProbe.reason).toBeUndefined();
-    expect(storedAfterFailedProbe.checkedAt).toBe(started.checkedAt);
+    expect(storedAfterFailedProbe.state).toBe('unhealthy');
+    expect(storedAfterFailedProbe.healthy).toBe(false);
+    expect(storedAfterFailedProbe.reason).toBe('health_http_error');
+    expect(storedAfterFailedProbe.checkedAt).toBe(failedProbe.checkedAt);
 
     await vi.advanceTimersByTimeAsync(1_000);
     const recoveredProbe = await manager.health({ probe: true });
@@ -864,6 +864,14 @@ describe('sidecar-manager', () => {
       expect(secondDecision.breaker.state).toBe('open');
       expect(firstDecision.sidecarStatus?.checkedAt).toBe(
         secondDecision.sidecarStatus?.checkedAt,
+      );
+
+      const storedStatus = manager.getStatus();
+      expect(storedStatus.state).toBe('unhealthy');
+      expect(storedStatus.healthy).toBe(false);
+      expect(storedStatus.reason).toBe('health_http_error');
+      expect(storedStatus.checkedAt).toBe(
+        firstDecision.sidecarStatus?.checkedAt,
       );
     });
   });
