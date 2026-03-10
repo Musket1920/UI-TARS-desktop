@@ -248,7 +248,34 @@ describe('ipc-agent-regression existing agent routes', () => {
     });
 
     expect(store.getState().agentSPaused).toBe(true);
-    expect(store.getState().thinking).toBe(false);
+    expect(store.getState().thinking).toBe(true);
+
+    const pausedRuntimeStatus = await agentRoute.getAgentRuntimeStatus.handle({
+      input: undefined,
+      context: {} as RuntimeStatusContext,
+    });
+
+    expect(pausedRuntimeStatus).toMatchObject({
+      status: 'paused',
+      engine: {
+        active: true,
+        paused: true,
+        thinking: true,
+      },
+      controls: {
+        canRun: false,
+        canPause: false,
+        canResume: true,
+        canStop: true,
+      },
+    });
+
+    await agentRoute.runAgent.handle({
+      input: undefined,
+      context: {} as RunAgentContext,
+    });
+
+    expect(runAgentMock).not.toHaveBeenCalled();
 
     await agentRoute.resumeRun.handle({
       input: undefined,
