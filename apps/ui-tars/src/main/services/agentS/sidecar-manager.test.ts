@@ -499,6 +499,43 @@ describe('sidecar-manager', () => {
     );
   });
 
+  it('maps explicit live probe connection failures to health_probe_failed', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(createHealthyResponse())
+      .mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+    const manager = new AgentSSidecarManager({
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const started = await manager.start({
+      mode: 'external',
+      endpoint: 'https://agent-s.local',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 5_000,
+      healthTimeoutMs: 300,
+    });
+
+    expect(started.state).toBe('running');
+    expect(started.healthy).toBe(true);
+
+    const failedProbe = await manager.health({ probe: true });
+
+    expect(failedProbe.state).toBe('unhealthy');
+    expect(failedProbe.healthy).toBe(false);
+    expect(failedProbe.reason).toBe('health_probe_failed');
+    expect(failedProbe.reason).not.toBe('heartbeat_failed');
+    expect(failedProbe.error).toContain('connect ECONNREFUSED');
+
+    const storedStatus = manager.getStatus();
+    expect(storedStatus.state).toBe('running');
+    expect(storedStatus.healthy).toBe(true);
+    expect(storedStatus.reason).toBeUndefined();
+  });
+
   it('normalizes trailing /health endpoints and still honors explicit custom health paths', async () => {
     const defaultFetchMock = vi
       .fn<typeof fetch>()

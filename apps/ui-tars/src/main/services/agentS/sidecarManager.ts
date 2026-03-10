@@ -32,6 +32,7 @@ export type SidecarFailureReason =
   | 'invalid_endpoint'
   | 'health_http_error'
   | 'health_timeout'
+  | 'health_probe_failed'
   | 'heartbeat_failed'
   | 'heartbeat_timeout'
   | 'child_process_exit'
@@ -310,6 +311,7 @@ export const classifyAgentSFailureReason = (
     reasonCode === 'startup_failed' ||
     reasonCode === 'invalid_endpoint' ||
     reasonCode === 'health_http_error' ||
+    reasonCode === 'health_probe_failed' ||
     reasonCode === 'heartbeat_failed' ||
     reasonCode === 'child_process_exit' ||
     reasonCode === 'stop_requested' ||
@@ -1125,7 +1127,12 @@ export class AgentSSidecarManager {
       return {
         healthy: false,
         checkedAt,
-        reason: context === 'startup' ? 'startup_failed' : 'heartbeat_failed',
+        reason:
+          context === 'startup'
+            ? 'startup_failed'
+            : context === 'probe'
+              ? 'health_probe_failed'
+              : 'heartbeat_failed',
         error: error instanceof Error ? error.message : String(error),
       };
     } finally {
