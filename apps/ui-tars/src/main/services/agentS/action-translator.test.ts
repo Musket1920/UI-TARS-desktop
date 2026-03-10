@@ -240,6 +240,42 @@ describe('action-translator', () => {
     }
   });
 
+  it('maps scroll coordinate and position aliases into start_box', () => {
+    const coordinate = translateAgentSAction({
+      action: 'scroll',
+      action_inputs: {
+        direction: 'down',
+        coordinate: [12, 34],
+      },
+    });
+    const position = translateAgentSAction({
+      action: 'scroll',
+      action_inputs: {
+        direction: 'up',
+        position: [56, 78],
+      },
+    });
+
+    expect(coordinate.ok).toBe(true);
+    expect(position.ok).toBe(true);
+
+    if (coordinate.ok) {
+      expect(coordinate.normalizedAction).toBe('scroll');
+      expect(coordinate.parsed.action_inputs).toEqual({
+        direction: 'down',
+        start_box: '[12,34,12,34]',
+      });
+    }
+
+    if (position.ok) {
+      expect(position.normalizedAction).toBe('scroll');
+      expect(position.parsed.action_inputs).toEqual({
+        direction: 'up',
+        start_box: '[56,78,56,78]',
+      });
+    }
+  });
+
   it('returns TRANSLATION_UNSUPPORTED_ACTION for unknown action', () => {
     const result = translateAgentSAction({
       action: 'open_app',

@@ -681,7 +681,15 @@ export const translateAgentSAction = (
 
     const start = resolveOptionalSingleBox(
       inputs,
-      ['start_box', 'point', 'start_point', 'bbox', 'box'],
+      [
+        'start_box',
+        'point',
+        'start_point',
+        'bbox',
+        'box',
+        'coordinate',
+        'position',
+      ],
       'start_box',
     );
     if (isTranslationError(start)) {
