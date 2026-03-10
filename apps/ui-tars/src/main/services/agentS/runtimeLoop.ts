@@ -47,6 +47,7 @@ import {
 export type AgentSRuntimeErrorCode =
   | 'ACTION_NOT_ALLOWED'
   | 'AGENT_S_CONFIG_ERROR'
+  | 'AGENT_S_OPERATOR_ERROR'
   | 'AGENT_S_SIDECAR_UNHEALTHY'
   | 'AGENT_S_TURN_TIMEOUT'
   | 'AGENT_S_TURN_REQUEST_FAILED'
@@ -221,6 +222,106 @@ const waitForLoopInterval = async (
     if (abortSignal?.aborted) {
       finish();
     }
+  });
+};
+
+const raceTurnOperation = async <T>(
+  deps: Pick<AgentSRuntimeDependencies, 'setTimeout' | 'clearTimeout'>,
+  params: {
+    operation: Promise<T>;
+    step: number;
+    turnTimeoutMs: number;
+    abortSignal?: AbortSignal;
+    correlation?: AgentSCorrelationIds;
+    telemetrySource: string;
+  },
+): Promise<T> => {
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false;
+    let timeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timeout !== null) {
+        deps.clearTimeout(timeout);
+      }
+      params.abortSignal?.removeEventListener('abort', onAbort);
+    };
+
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const onAbort = () => {
+      finish(() => {
+        reject(new AgentSRuntimeStoppedError(params.step));
+      });
+    };
+
+    params.abortSignal?.addEventListener('abort', onAbort, { once: true });
+
+    if (params.abortSignal?.aborted) {
+      onAbort();
+      return;
+    }
+
+    timeout = deps.setTimeout(() => {
+      void Promise.resolve().then(() => {
+        if (settled) {
+          return;
+        }
+
+        if (params.abortSignal?.aborted) {
+          onAbort();
+          return;
+        }
+
+        const timeoutCorrelation = params.correlation
+          ? { ...params.correlation, turnId: String(params.step) }
+          : params.correlation;
+
+        emitAgentSTelemetry(
+          'turn_timeout',
+          {
+            source: params.telemetrySource,
+            timeoutMs: params.turnTimeoutMs,
+            step: params.step,
+          },
+          {
+            level: 'warn',
+            correlation: timeoutCorrelation,
+          },
+        );
+
+        finish(() => {
+          reject(
+            runtimeError({
+              code: 'AGENT_S_TURN_TIMEOUT',
+              message: `Agent-S turn timed out in ${params.turnTimeoutMs}ms`,
+              step: params.step,
+            }),
+          );
+        });
+      });
+    }, params.turnTimeoutMs);
+
+    void params.operation.then(
+      (value) => {
+        finish(() => {
+          resolve(value);
+        });
+      },
+      (error) => {
+        finish(() => {
+          reject(error);
+        });
+      },
+    );
   });
 };
 
@@ -539,7 +640,14 @@ export const runAgentSRuntimeLoop = async (
       }
 
       const turnStartedAt = deps.now();
-      const screenshot = await args.operator.screenshot();
+      const screenshot = await raceTurnOperation(deps, {
+        operation: args.operator.screenshot(),
+        step,
+        turnTimeoutMs,
+        abortSignal: args.getState().abortController?.signal,
+        correlation: args.correlation,
+        telemetrySource: 'agent_s.runtime.screenshot',
+      });
       const { width, height } = await readImageSize(screenshot.base64).catch(
         (error) => {
           throw runtimeError(
@@ -660,13 +768,31 @@ export const runAgentSRuntimeLoop = async (
         conversations: [modelConversation],
       });
 
-      const executeOutput = await args.operator.execute({
-        prediction: prediction.predictionText,
-        parsedPrediction: translated.parsed,
-        screenWidth: width,
-        screenHeight: height,
-        scaleFactor: screenshot.scaleFactor,
-        factors: [1, 1],
+      const executeOutput = await raceTurnOperation(deps, {
+        operation: args.operator
+          .execute({
+            prediction: prediction.predictionText,
+            parsedPrediction: translated.parsed,
+            screenWidth: width,
+            screenHeight: height,
+            scaleFactor: screenshot.scaleFactor,
+            factors: [1, 1],
+          })
+          .catch((error) => {
+            throw runtimeError(
+              {
+                code: 'AGENT_S_OPERATOR_ERROR',
+                message: error instanceof Error ? error.message : String(error),
+                step,
+              },
+              error,
+            );
+          }),
+        step,
+        turnTimeoutMs,
+        abortSignal: args.getState().abortController?.signal,
+        correlation: args.correlation,
+        telemetrySource: 'agent_s.runtime.execute',
       });
 
       const nextStatus = resolveStatusFromAction(

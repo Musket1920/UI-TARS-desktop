@@ -426,6 +426,187 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('finishes with USER_STOPPED when a hanging screenshot is aborted', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const abortController = new AbortController();
+    let resolveStarted: () => void = () => {};
+    const screenshotStarted = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi.fn(() => {
+        resolveStarted();
+        return new Promise<
+          Awaited<ReturnType<AgentSRuntimeOperator['screenshot']>>
+        >(() => {});
+      }),
+      execute: vi.fn(async () => ({
+        status: StatusEnum.END,
+      })),
+    };
+
+    setState({
+      ...getState(),
+      abortController,
+    });
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'stop hanging screenshot',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: failingFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    await screenshotStarted;
+
+    abortController.abort();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.USER_STOPPED);
+    expect(result.error).toBeUndefined();
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(
+      history.some((state) => state.status === StatusEnum.USER_STOPPED),
+    ).toBe(true);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      false,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('returns AGENT_S_OPERATOR_ERROR when operator execution throws', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi.fn(async () => ({
+        base64: TINY_PNG_BASE64,
+        scaleFactor: 1,
+      })),
+      execute: vi.fn(async () => {
+        throw new Error('operator exploded');
+      }),
+    };
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createPredictResponse('finished'));
+
+    translateAgentSActionMock.mockReturnValue({
+      ok: true,
+      normalizedAction: 'finished',
+      parsed: {
+        action_type: 'finished',
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    });
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'trigger operator failure',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_OPERATOR_ERROR');
+    expect(result.error?.message).toBe('operator exploded');
+    expect(result.error?.step).toBe(1);
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('finishes with USER_STOPPED when a hanging execute is aborted', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const abortController = new AbortController();
+    let resolveStarted: () => void = () => {};
+    const executeStarted = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi.fn(async () => ({
+        base64: TINY_PNG_BASE64,
+        scaleFactor: 1,
+      })),
+      execute: vi.fn(() => {
+        resolveStarted();
+        return new Promise<
+          Awaited<ReturnType<AgentSRuntimeOperator['execute']>>
+        >(() => {});
+      }),
+    };
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createPredictResponse('finished'));
+
+    translateAgentSActionMock.mockReturnValue({
+      ok: true,
+      normalizedAction: 'finished',
+      parsed: {
+        action_type: 'finished',
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    });
+
+    setState({
+      ...getState(),
+      abortController,
+    });
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'stop hanging execute',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    await executeStarted;
+
+    abortController.abort();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.USER_STOPPED);
+    expect(result.error).toBeUndefined();
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(
+      history.some((state) => state.status === StatusEnum.USER_STOPPED),
+    ).toBe(true);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      false,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('returns a dedicated config error state when provider config is missing before the first turn', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();
@@ -724,7 +905,9 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
 
     await pendingFetch.started;
 
-    const timeoutTimer = timers.scheduled.find((timer) => timer.ms === 1_000);
+    const timeoutTimer = timers.scheduled.find(
+      (timer) => timer.ms === 1_000 && !timer.cleared,
+    );
 
     expect(timeoutTimer).toBeDefined();
     expect(pendingFetch.getSignal()).not.toBeNull();
@@ -780,7 +963,9 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
 
     await pendingFetch.started;
 
-    const timeoutTimer = timers.scheduled.find((timer) => timer.ms === 1_000);
+    const timeoutTimer = timers.scheduled.find(
+      (timer) => timer.ms === 1_000 && !timer.cleared,
+    );
 
     expect(timeoutTimer).toBeDefined();
     expect(pendingFetch.getSignal()).not.toBeNull();
@@ -867,7 +1052,9 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
 
     await started;
 
-    const timeoutTimer = timers.scheduled.find((timer) => timer.ms === 1_000);
+    const timeoutTimer = timers.scheduled.find(
+      (timer) => timer.ms === 1_000 && !timer.cleared,
+    );
 
     expect(timeoutTimer).toBeDefined();
 

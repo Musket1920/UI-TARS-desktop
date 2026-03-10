@@ -315,4 +315,30 @@ describe('dispatcher-agent-s-selected runAgent dispatcher', () => {
       featureEnabled: true,
     });
   });
+
+  it('does not record breaker failures for AGENT_S_OPERATOR_ERROR runtime fallback', async () => {
+    const { setState, getState } = createStateHandlers();
+
+    runAgentSRuntimeLoopMock.mockResolvedValueOnce({
+      status: StatusEnum.ERROR,
+      stepsExecuted: 1,
+      error: {
+        code: 'AGENT_S_OPERATOR_ERROR',
+        message: 'operator exploded',
+        step: 1,
+      },
+    });
+
+    await runAgent(
+      setState as unknown as RunAgentSetState,
+      getState as unknown as RunAgentGetState,
+    );
+
+    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+    expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
+    expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+  });
 });
