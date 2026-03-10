@@ -89,7 +89,7 @@ describe('createAgentSStatusPoller', () => {
     expect(setLoadingStatus.mock.calls).toEqual([[true], [false]]);
   });
 
-  it('does not clear state after stop when polling rejects', async () => {
+  it('does not clear state after stop when polling rejects and clears loading', async () => {
     const setLoadingStatus = vi.fn();
     const setStatus = vi.fn();
     const onPollError = vi.fn();
@@ -114,5 +114,6 @@ describe('createAgentSStatusPoller', () => {
 
     expect(onPollError).not.toHaveBeenCalled();
     expect(setStatus).not.toHaveBeenCalled();
+    expect(setLoadingStatus.mock.calls).toEqual([[true], [false]]);
   });
 });

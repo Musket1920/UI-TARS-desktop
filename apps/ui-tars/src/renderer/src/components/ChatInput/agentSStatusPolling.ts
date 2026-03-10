@@ -44,19 +44,23 @@ export const createAgentSStatusPoller = <THealth, TRuntimeStatus>({
       const nextStatus = await fetchStatus();
 
       if (!active) {
+        setLoadingStatus(false);
         return;
       }
 
       setStatus(nextStatus);
     } catch (error) {
       if (!active) {
+        setLoadingStatus(false);
         return;
       }
 
       onPollError?.(error);
       setStatus({ health: null, runtimeStatus: null });
     } finally {
-      setLoadingStatus(false);
+      if (active) {
+        setLoadingStatus(false);
+      }
     }
   };
 
