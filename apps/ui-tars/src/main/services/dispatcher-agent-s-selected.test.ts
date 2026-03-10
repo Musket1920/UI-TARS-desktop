@@ -350,4 +350,37 @@ describe('dispatcher-agent-s-selected runAgent dispatcher', () => {
       expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('clears stale agentSPaused when Agent-S runtime errors and falls back to legacy', async () => {
+    const { setState, getState } = createStateHandlers();
+
+    setState({
+      ...getState(),
+      agentSPaused: true,
+    });
+
+    runAgentSRuntimeLoopMock.mockResolvedValueOnce({
+      status: StatusEnum.ERROR,
+      stepsExecuted: 1,
+      error: {
+        code: 'AGENT_S_PREDICTION_MALFORMED',
+        message: 'bad prediction',
+        step: 1,
+      },
+    });
+
+    await runAgent(
+      setState as unknown as RunAgentSetState,
+      getState as unknown as RunAgentGetState,
+    );
+
+    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
+    expect(getState()).toMatchObject({
+      status: StatusEnum.RUNNING,
+      errorMsg: null,
+      agentSPaused: false,
+    });
+  });
 });
