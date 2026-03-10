@@ -444,7 +444,7 @@ export const runAgent = async (
     let modelVersion = getModelVersion(settings.vlmProvider);
     let modelConfig: UITarsModelConfig = {
       baseURL: settings.vlmBaseUrl,
-      apiKey: settings.vlmApiKey,
+      apiKey: settings.vlmApiKey, // secretlint-disable-line @secretlint/secretlint-rule-pattern -- config field name, value comes from settings
       model: settings.vlmModelName,
       useResponsesApi: settings.useResponsesApi,
     };
@@ -458,7 +458,7 @@ export const runAgent = async (
         await ProxyClient.getRemoteVLMResponseApiSupport();
       modelConfig = {
         baseURL: FREE_MODEL_BASE_URL,
-        apiKey: '',
+        apiKey: '', // secretlint-disable-line @secretlint/secretlint-rule-pattern -- empty placeholder, not a credential
         model: '',
         useResponsesApi,
       };

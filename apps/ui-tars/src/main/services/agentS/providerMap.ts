@@ -17,7 +17,7 @@ export type AgentSProviderConfig = {
   provider: AgentSEngineType;
   model: string;
   baseURL: string;
-  apiKey: string;
+  apiKey: string; // secretlint-disable-line @secretlint/secretlint-rule-pattern -- config field name, not a secret value
   useResponsesApi: boolean;
   engineParamsForGeneration: AgentSEngineParams;
   engineParamsForGrounding: AgentSEngineParams;
@@ -119,7 +119,7 @@ export const mapProviderToAgentSConfig = (
     provider,
     model,
     baseURL,
-    apiKey: apiKeyValue,
+    apiKey: apiKeyValue, // secretlint-disable-line @secretlint/secretlint-rule-pattern -- config field name, not an inline credential
     useResponsesApi: Boolean(settings.useResponsesApi),
     engineParamsForGeneration: engineParams,
     // Grounding intentionally mirrors generation today; wire a dedicated
