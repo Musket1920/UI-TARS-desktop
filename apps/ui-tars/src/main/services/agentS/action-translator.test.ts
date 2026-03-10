@@ -2,8 +2,19 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('@main/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    log: vi.fn(),
+  },
+}));
+
+import { logger } from '@main/logger';
 import { translateAgentSAction } from './actionTranslator';
 
 describe('action-translator', () => {
@@ -191,14 +202,18 @@ describe('action-translator', () => {
   it('still returns missing-required-field when type content is absent', () => {
     const result = translateAgentSAction({
       action: 'type',
-      action_inputs: {},
+      action_inputs: { payload: 'hello', delay_ms: 25 },
     });
 
     expect(result).toEqual({
       ok: false,
       code: 'TRANSLATION_MISSING_REQUIRED_FIELD',
-      message: 'Missing required field: content',
+      message:
+        'Missing required field: content (available keys: delay_ms, payload)',
     });
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[agentS actionTranslator] Type action missing content/text/value; available keys: delay_ms, payload',
+    );
   });
 
   it('preserves optional scroll coordinates in start_box', () => {

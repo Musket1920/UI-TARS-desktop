@@ -6,6 +6,7 @@ import {
   type ActionInputs,
   type PredictionParsed,
 } from '@ui-tars/shared/types';
+import { logger } from '@main/logger';
 
 export type AgentSActionLikeInput = string | Record<string, unknown>;
 
@@ -512,6 +513,11 @@ const resolveTypeContent = (inputs: Record<string, unknown>): string | null => {
   return null;
 };
 
+const formatAvailableInputKeys = (inputs: Record<string, unknown>): string => {
+  const keys = Object.keys(inputs).sort();
+  return keys.length > 0 ? keys.join(', ') : 'none';
+};
+
 const parsedResult = (params: {
   actionType: string;
   actionInputs: ActionInputs;
@@ -601,9 +607,13 @@ export const translateAgentSAction = (
     const content = resolveTypeContent(inputs);
 
     if (content === null) {
+      const availableKeys = formatAvailableInputKeys(inputs);
+      logger.warn(
+        `[agentS actionTranslator] Type action missing content/text/value; available keys: ${availableKeys}`,
+      );
       return errorResult(
         'TRANSLATION_MISSING_REQUIRED_FIELD',
-        'Missing required field: content',
+        `Missing required field: content (available keys: ${availableKeys})`,
       );
     }
 
