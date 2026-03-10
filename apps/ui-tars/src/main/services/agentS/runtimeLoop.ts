@@ -608,7 +608,12 @@ export const runAgentSRuntimeLoop = async (
     });
 
     const sidecarStatus = await deps.sidecarManager.health({ probe: true });
-    if (!sidecarStatus.healthy || !sidecarStatus.endpoint) {
+    const treatTransientProbeFailureAsHealthy =
+      sidecarStatus.transientProbeFailure === true && !!sidecarStatus.endpoint;
+    if (
+      (!sidecarStatus.healthy && !treatTransientProbeFailureAsHealthy) ||
+      !sidecarStatus.endpoint
+    ) {
       throw runtimeError(
         {
           code: 'AGENT_S_SIDECAR_UNHEALTHY',

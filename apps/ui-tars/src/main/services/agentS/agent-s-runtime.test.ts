@@ -9,6 +9,7 @@ import type { AppState, LocalStore } from '@main/store/types';
 import { runAgentSRuntimeLoop } from './runtimeLoop';
 import type { AgentSRuntimeOperator } from './runtimeLoop';
 import { isAgentSActive, setAgentSActive } from './lifecycle';
+import type { SidecarStatus } from './sidecarManager';
 
 const { translateAgentSActionMock } = vi.hoisted(() => ({
   translateAgentSActionMock: vi.fn(),
@@ -395,6 +396,77 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
       true,
     );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('continues past a transient preflight probe failure when the sidecar endpoint is still available', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = {
+      health: vi.fn(
+        async (): Promise<SidecarStatus> => ({
+          state: 'unhealthy',
+          mode: 'embedded',
+          healthy: false,
+          transientProbeFailure: true,
+          endpoint: 'http://127.0.0.1:10800',
+          pid: 4242,
+          checkedAt: 1_000,
+          lastHeartbeatAt: 900,
+          reason: 'health_http_error',
+        }),
+      ),
+      getStatus: vi.fn(
+        (): SidecarStatus => ({
+          state: 'running',
+          mode: 'embedded',
+          healthy: true,
+          endpoint: 'http://127.0.0.1:10800',
+          pid: 4242,
+          checkedAt: 900,
+          lastHeartbeatAt: 900,
+        }),
+      ),
+    };
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createPredictResponse('finished'));
+
+    translateAgentSActionMock.mockReturnValue({
+      ok: true,
+      normalizedAction: 'finished',
+      parsed: {
+        action_type: 'finished',
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    });
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'ignore transient preflight probe failure',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.END);
+    expect(result.error).toBeUndefined();
+    expect(result.stepsExecuted).toBe(1);
+    expect(operator.screenshot).toHaveBeenCalledTimes(1);
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(predictFetch).toHaveBeenCalledTimes(1);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      false,
+    );
+    expect(history.some((state) => state.status === StatusEnum.END)).toBe(true);
     expect(isAgentSActive()).toBe(false);
   });
 
