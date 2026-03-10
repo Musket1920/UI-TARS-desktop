@@ -42,6 +42,7 @@ export type SidecarStatus = {
   state: SidecarState;
   mode: SidecarMode | null;
   healthy: boolean;
+  transientProbeFailure?: boolean;
   endpoint: string | null;
   pid: number | null;
   checkedAt: number;
@@ -687,6 +688,7 @@ export class AgentSSidecarManager {
         ...currentStatus,
         state: 'unhealthy',
         healthy: false,
+        transientProbeFailure: true,
         reason: result.reason,
         httpStatus: result.httpStatus,
         error: result.error,

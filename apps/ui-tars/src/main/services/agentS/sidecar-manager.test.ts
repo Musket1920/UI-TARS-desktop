@@ -441,7 +441,7 @@ describe('sidecar-manager', () => {
     expect(probed.healthy).toBe(true);
   });
 
-  it('returns an unhealthy probe result without downgrading stored healthy status on a transient failure', async () => {
+  it('returns an unhealthy transient probe result without downgrading stored healthy status', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(createHealthyResponse())
@@ -474,11 +474,13 @@ describe('sidecar-manager', () => {
 
     expect(failedProbe.state).toBe('unhealthy');
     expect(failedProbe.healthy).toBe(false);
+    expect(failedProbe.transientProbeFailure).toBe(true);
     expect(failedProbe.reason).toBe('health_http_error');
 
     const storedAfterFailedProbe = manager.getStatus();
     expect(storedAfterFailedProbe.state).toBe('running');
     expect(storedAfterFailedProbe.healthy).toBe(true);
+    expect(storedAfterFailedProbe.transientProbeFailure).toBeUndefined();
     expect(storedAfterFailedProbe.reason).toBeUndefined();
     expect(storedAfterFailedProbe.checkedAt).toBe(started.checkedAt);
     expect(storedAfterFailedProbe.lastHeartbeatAt).toBe(started.checkedAt);
@@ -526,6 +528,7 @@ describe('sidecar-manager', () => {
 
     expect(failedProbe.state).toBe('unhealthy');
     expect(failedProbe.healthy).toBe(false);
+    expect(failedProbe.transientProbeFailure).toBe(true);
     expect(failedProbe.reason).toBe('health_probe_failed');
     expect(failedProbe.reason).not.toBe('heartbeat_failed');
     expect(failedProbe.error).toContain('connect ECONNREFUSED');
@@ -533,6 +536,7 @@ describe('sidecar-manager', () => {
     const storedStatus = manager.getStatus();
     expect(storedStatus.state).toBe('running');
     expect(storedStatus.healthy).toBe(true);
+    expect(storedStatus.transientProbeFailure).toBeUndefined();
     expect(storedStatus.reason).toBeUndefined();
   });
 
@@ -903,6 +907,7 @@ describe('sidecar-manager', () => {
       expect(firstDecision.breaker.state).toBe('open');
       expect(firstDecision.sidecarStatus?.state).toBe('unhealthy');
       expect(firstDecision.sidecarStatus?.healthy).toBe(false);
+      expect(firstDecision.sidecarStatus?.transientProbeFailure).toBe(true);
       expect(firstDecision.sidecarStatus?.reason).toBe('health_http_error');
       expect(secondDecision.allowAgentS).toBe(false);
       expect(secondDecision.reasonCode).toBe('circuit_breaker_open');
