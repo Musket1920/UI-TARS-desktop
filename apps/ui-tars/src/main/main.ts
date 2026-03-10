@@ -156,13 +156,16 @@ const startAgentSSidecarIfNeeded = async (
 
   const command = process.env.AGENT_S_SIDECAR_COMMAND?.trim() || 'agent_s';
   const args = parseSidecarArgs(process.env.AGENT_S_SIDECAR_ARGS);
+  const sidecarEnv = { ...process.env };
+
+  delete sidecarEnv.AGENT_S_ENABLE_LOCAL_ENV;
 
   const status = await agentSSidecarManager.start({
     mode: 'embedded',
     command,
     args,
     endpoint,
-    env: process.env,
+    env: sidecarEnv,
     startupTimeoutMs,
     startupPollIntervalMs,
     heartbeatIntervalMs,
