@@ -16,7 +16,7 @@ type SettingInputBase = {
 };
 
 type VLMCheckInput = SettingInputBase & {
-  apiKey: string;
+  apiKey: string; // secretlint-disable-line @secretlint/secretlint-rule-pattern
 };
 
 const buildOpenAIConfig = (
