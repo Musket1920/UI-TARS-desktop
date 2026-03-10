@@ -502,13 +502,13 @@ describe('sidecar-manager', () => {
   it('normalizes trailing /health endpoints and still honors explicit custom health paths', async () => {
     const defaultFetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(createHealthyResponse({ status: 'running' }));
+      .mockResolvedValue(createHealthyResponse());
     const trailingSlashFetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(createHealthyResponse({ status: 'running' }));
+      .mockResolvedValue(createHealthyResponse());
     const customFetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(createHealthyResponse({ status: 'running' }));
+      .mockResolvedValue(createHealthyResponse());
 
     const defaultManager = new AgentSSidecarManager({
       spawn: vi.fn() as SpawnFunction,
@@ -1316,7 +1316,6 @@ describe('sidecar-manager', () => {
     ).extractHealthFromPayload;
 
     expect(extractHealthFromPayload({ healthy: true })).toBe(true);
-    expect(extractHealthFromPayload({ status: 'running' })).toBe(true);
     expect(extractHealthFromPayload({ status: 'UP' })).toBe(true);
     expect(extractHealthFromPayload({ healthy: true, status: 'ok' })).toBe(
       true,
@@ -1334,6 +1333,7 @@ describe('sidecar-manager', () => {
     expect(extractHealthFromPayload({ healthy: true, status: 'unknown' })).toBe(
       false,
     );
+    expect(extractHealthFromPayload({ status: 'running' })).toBe(false);
     expect(
       extractHealthFromPayload({ healthy: false, status: 'running' }),
     ).toBe(false);

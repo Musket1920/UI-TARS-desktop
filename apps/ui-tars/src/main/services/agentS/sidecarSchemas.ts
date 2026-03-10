@@ -131,6 +131,11 @@ const HealthyStatusSchema = z.preprocess(
   z.enum(['ok', 'healthy', 'running', 'up']),
 );
 
+const ExplicitHealthyStatusSchema = z.preprocess(
+  normalizeStatus,
+  z.enum(['ok', 'healthy', 'up']),
+);
+
 const HealthyPayloadSchema = z.union([
   z
     .object({
@@ -140,7 +145,7 @@ const HealthyPayloadSchema = z.union([
     .passthrough(),
   z
     .object({
-      status: HealthyStatusSchema,
+      status: ExplicitHealthyStatusSchema,
       healthy: z.literal(true).optional(),
     })
     .passthrough(),

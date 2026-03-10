@@ -4,7 +4,10 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { parseSidecarPredictionPayload } from './sidecarSchemas';
+import {
+  isExplicitHealthyHealthPayload,
+  parseSidecarPredictionPayload,
+} from './sidecarSchemas';
 
 describe('sidecarSchemas', () => {
   it.each([
@@ -67,4 +70,12 @@ describe('sidecarSchemas', () => {
       expect(result?.action).toBe(expectedAction);
     },
   );
+
+  it('rejects status-only running payloads as explicitly healthy', () => {
+    expect(isExplicitHealthyHealthPayload({ status: 'running' })).toBe(false);
+    expect(
+      isExplicitHealthyHealthPayload({ healthy: true, status: 'running' }),
+    ).toBe(true);
+    expect(isExplicitHealthyHealthPayload({ status: 'healthy' })).toBe(true);
+  });
 });
