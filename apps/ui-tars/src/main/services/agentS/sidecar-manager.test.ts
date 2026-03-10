@@ -441,7 +441,7 @@ describe('sidecar-manager', () => {
     expect(probed.healthy).toBe(true);
   });
 
-  it('updates stored status when an explicit probe fails transiently', async () => {
+  it('returns an unhealthy probe result without downgrading stored healthy status on a transient failure', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(createHealthyResponse())
@@ -477,10 +477,11 @@ describe('sidecar-manager', () => {
     expect(failedProbe.reason).toBe('health_http_error');
 
     const storedAfterFailedProbe = manager.getStatus();
-    expect(storedAfterFailedProbe.state).toBe('unhealthy');
-    expect(storedAfterFailedProbe.healthy).toBe(false);
-    expect(storedAfterFailedProbe.reason).toBe('health_http_error');
-    expect(storedAfterFailedProbe.checkedAt).toBe(failedProbe.checkedAt);
+    expect(storedAfterFailedProbe.state).toBe('running');
+    expect(storedAfterFailedProbe.healthy).toBe(true);
+    expect(storedAfterFailedProbe.reason).toBeUndefined();
+    expect(storedAfterFailedProbe.checkedAt).toBe(started.checkedAt);
+    expect(storedAfterFailedProbe.lastHeartbeatAt).toBe(started.checkedAt);
 
     await vi.advanceTimersByTimeAsync(1_000);
     const recoveredProbe = await manager.health({ probe: true });
@@ -801,7 +802,7 @@ describe('sidecar-manager', () => {
     );
   });
 
-  it('deduplicates concurrent half-open probe failures', async () => {
+  it('re-opens the breaker when a half-open recovery probe fails, even if stored status stays healthy', async () => {
     await withHalfOpenProbeConfig(async () => {
       const halfOpenProbe = createDeferred<Response>();
       const fetchMock = vi
@@ -814,7 +815,7 @@ describe('sidecar-manager', () => {
         now: () => Date.now(),
       });
 
-      await manager.start({
+      const started = await manager.start({
         mode: 'external',
         endpoint: 'https://agent-s.local',
         startupTimeoutMs: 1_000,
@@ -855,10 +856,17 @@ describe('sidecar-manager', () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(failureSpy).toHaveBeenCalledTimes(1);
+      expect(failureSpy).toHaveBeenCalledWith({
+        source: 'probe',
+        reasonCode: 'health_http_error',
+      });
       expect(successSpy).not.toHaveBeenCalled();
       expect(firstDecision.allowAgentS).toBe(false);
       expect(firstDecision.reasonCode).toBe('circuit_breaker_open');
       expect(firstDecision.breaker.state).toBe('open');
+      expect(firstDecision.sidecarStatus?.state).toBe('unhealthy');
+      expect(firstDecision.sidecarStatus?.healthy).toBe(false);
+      expect(firstDecision.sidecarStatus?.reason).toBe('health_http_error');
       expect(secondDecision.allowAgentS).toBe(false);
       expect(secondDecision.reasonCode).toBe('circuit_breaker_open');
       expect(secondDecision.breaker.state).toBe('open');
@@ -867,12 +875,11 @@ describe('sidecar-manager', () => {
       );
 
       const storedStatus = manager.getStatus();
-      expect(storedStatus.state).toBe('unhealthy');
-      expect(storedStatus.healthy).toBe(false);
-      expect(storedStatus.reason).toBe('health_http_error');
-      expect(storedStatus.checkedAt).toBe(
-        firstDecision.sidecarStatus?.checkedAt,
-      );
+      expect(storedStatus.state).toBe('running');
+      expect(storedStatus.healthy).toBe(true);
+      expect(storedStatus.reason).toBeUndefined();
+      expect(storedStatus.checkedAt).toBe(started.checkedAt);
+      expect(manager.getCircuitBreakerStatus().state).toBe('open');
     });
   });
 

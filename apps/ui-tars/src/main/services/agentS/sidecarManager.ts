@@ -665,6 +665,7 @@ export class AgentSSidecarManager {
       return this.getStatus();
     }
 
+    const currentStatus = this.getStatus();
     const result = await this.probeHealth(this.currentConfig);
     if (result.healthy) {
       this.updateStatus({
@@ -677,6 +678,18 @@ export class AgentSSidecarManager {
         lastHeartbeatAt: result.checkedAt,
       });
       return this.getStatus();
+    }
+
+    if (currentStatus.state === 'running' && currentStatus.healthy) {
+      return {
+        ...currentStatus,
+        state: 'unhealthy',
+        healthy: false,
+        reason: result.reason,
+        httpStatus: result.httpStatus,
+        error: result.error,
+        checkedAt: result.checkedAt,
+      };
     }
 
     this.updateStatus({
