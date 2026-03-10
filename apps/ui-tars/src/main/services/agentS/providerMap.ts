@@ -122,6 +122,8 @@ export const mapProviderToAgentSConfig = (
     apiKey: apiKeyValue,
     useResponsesApi: Boolean(settings.useResponsesApi),
     engineParamsForGeneration: engineParams,
+    // Grounding intentionally mirrors generation today; wire a dedicated
+    // grounding model here later if Agent-S grows separate grounding config.
     engineParamsForGrounding: { ...engineParams },
   } as AgentSProviderConfig;
 };
