@@ -122,7 +122,10 @@ vi.mock('./agentS/sidecarManager', () => ({
     if (reasonCode === 'AGENT_S_PREDICTION_MALFORMED') {
       return 'invalid_output';
     }
-    if (reasonCode === 'AGENT_S_TURN_TIMEOUT') {
+    if (
+      reasonCode === 'AGENT_S_TURN_TIMEOUT' ||
+      reasonCode === 'AGENT_S_OPERATOR_TIMEOUT'
+    ) {
       return 'timeout';
     }
     if (reasonCode === 'circuit_breaker_open') {
@@ -316,29 +319,35 @@ describe('dispatcher-agent-s-selected runAgent dispatcher', () => {
     });
   });
 
-  it('does not record breaker failures for AGENT_S_OPERATOR_ERROR runtime fallback', async () => {
-    const { setState, getState } = createStateHandlers();
+  it.each([
+    ['AGENT_S_OPERATOR_ERROR', 'operator exploded'],
+    ['AGENT_S_OPERATOR_TIMEOUT', 'operator timed out'],
+  ])(
+    'does not record breaker failures for %s runtime fallback',
+    async (errorCode, message) => {
+      const { setState, getState } = createStateHandlers();
 
-    runAgentSRuntimeLoopMock.mockResolvedValueOnce({
-      status: StatusEnum.ERROR,
-      stepsExecuted: 1,
-      error: {
-        code: 'AGENT_S_OPERATOR_ERROR',
-        message: 'operator exploded',
-        step: 1,
-      },
-    });
+      runAgentSRuntimeLoopMock.mockResolvedValueOnce({
+        status: StatusEnum.ERROR,
+        stepsExecuted: 1,
+        error: {
+          code: errorCode,
+          message,
+          step: 1,
+        },
+      });
 
-    await runAgent(
-      setState as unknown as RunAgentSetState,
-      getState as unknown as RunAgentGetState,
-    );
+      await runAgent(
+        setState as unknown as RunAgentSetState,
+        getState as unknown as RunAgentGetState,
+      );
 
-    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
-    expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
-    expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
-    expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
-    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
-    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
-  });
+      expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+      expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
+      expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+      expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
+      expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+      expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+    },
+  );
 });

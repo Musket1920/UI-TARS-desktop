@@ -483,6 +483,68 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('returns AGENT_S_OPERATOR_TIMEOUT when screenshot capture hangs past the turn timeout', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const timers = createTimerDeps();
+    let resolveStarted: () => void = () => {};
+    const screenshotStarted = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi.fn(() => {
+        resolveStarted();
+        return new Promise<
+          Awaited<ReturnType<AgentSRuntimeOperator['screenshot']>>
+        >(() => {});
+      }),
+      execute: vi.fn(async () => ({
+        status: StatusEnum.END,
+      })),
+    };
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: {
+        ...createSettings(),
+        agentSTurnTimeoutMs: 1_000,
+      },
+      operator,
+      instruction: 'timeout hanging screenshot',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: failingFetch,
+        sidecarManager,
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        now: () => 1_234,
+      },
+    });
+
+    await screenshotStarted;
+
+    const timeoutTimer = [...timers.scheduled]
+      .reverse()
+      .find((timer) => timer.ms === 1_000 && !timer.cleared);
+
+    expect(timeoutTimer).toBeDefined();
+
+    timeoutTimer?.callback();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_OPERATOR_TIMEOUT');
+    expect(result.error?.message).toBe('Agent-S operator timed out in 1000ms');
+    expect(result.error?.step).toBe(1);
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('returns AGENT_S_OPERATOR_ERROR when operator execution throws', async () => {
     const { setState, getState, history } = createStateHandlers();
     const sidecarManager = createFakeSidecarManager();
@@ -603,6 +665,83 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     ).toBe(true);
     expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
       false,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('returns AGENT_S_OPERATOR_TIMEOUT when execute hangs past the turn timeout', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const timers = createTimerDeps();
+    let resolveStarted: () => void = () => {};
+    const executeStarted = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi.fn(async () => ({
+        base64: TINY_PNG_BASE64,
+        scaleFactor: 1,
+      })),
+      execute: vi.fn(() => {
+        resolveStarted();
+        return new Promise<
+          Awaited<ReturnType<AgentSRuntimeOperator['execute']>>
+        >(() => {});
+      }),
+    };
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createPredictResponse('finished'));
+
+    translateAgentSActionMock.mockReturnValue({
+      ok: true,
+      normalizedAction: 'finished',
+      parsed: {
+        action_type: 'finished',
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    });
+
+    const loopPromise = runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: {
+        ...createSettings(),
+        agentSTurnTimeoutMs: 1_000,
+      },
+      operator,
+      instruction: 'timeout hanging execute',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        now: () => 1_234,
+      },
+    });
+
+    await executeStarted;
+
+    const timeoutTimer = [...timers.scheduled]
+      .reverse()
+      .find((timer) => timer.ms === 1_000 && !timer.cleared);
+
+    expect(timeoutTimer).toBeDefined();
+
+    timeoutTimer?.callback();
+
+    const result = await loopPromise;
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_OPERATOR_TIMEOUT');
+    expect(result.error?.message).toBe('Agent-S operator timed out in 1000ms');
+    expect(result.error?.step).toBe(1);
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
     );
     expect(isAgentSActive()).toBe(false);
   });

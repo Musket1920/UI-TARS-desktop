@@ -375,7 +375,8 @@ export const runAgent = async (
       const shouldRecordRuntimeCircuitFailure =
         runtimeFailureCode !== 'AGENT_S_MAX_STEPS_REACHED' &&
         runtimeFailureCode !== 'AGENT_S_CONFIG_ERROR' &&
-        runtimeFailureCode !== 'AGENT_S_OPERATOR_ERROR';
+        runtimeFailureCode !== 'AGENT_S_OPERATOR_ERROR' &&
+        runtimeFailureCode !== 'AGENT_S_OPERATOR_TIMEOUT';
       const breakerAfterRuntimeFailure = shouldRecordRuntimeCircuitFailure
         ? (agentSSidecarManager.recordCircuitFailure({
             source: 'runtime',
@@ -411,16 +412,19 @@ export const runAgent = async (
             ? 'sidecar_health_probe_failed'
             : 'sidecar_unhealthy'));
       const failureClass = classifyAgentSFailureReason(dispatcherReasonCode);
-      const breakerAfterDispatchFailure =
-        agentSFeatureEnabled && dispatcherReasonCode !== 'circuit_breaker_open'
-          ? (agentSSidecarManager.recordCircuitFailure({
-              source: 'dispatcher',
-              reasonCode: dispatcherReasonCode,
-            }) ??
-            dispatchCircuitStatus ??
-            agentSSidecarManager.getCircuitBreakerStatus())
-          : (dispatchCircuitStatus ??
-            agentSSidecarManager.getCircuitBreakerStatus());
+      const shouldRecordDispatcherCircuitFailure =
+        agentSFeatureEnabled &&
+        dispatcherReasonCode !== 'circuit_breaker_open' &&
+        !sidecarHealthStatus?.transientProbeFailure;
+      const breakerAfterDispatchFailure = shouldRecordDispatcherCircuitFailure
+        ? (agentSSidecarManager.recordCircuitFailure({
+            source: 'dispatcher',
+            reasonCode: dispatcherReasonCode,
+          }) ??
+          dispatchCircuitStatus ??
+          agentSSidecarManager.getCircuitBreakerStatus())
+        : (dispatchCircuitStatus ??
+          agentSSidecarManager.getCircuitBreakerStatus());
 
       emitDispatcherFallbackTelemetry(runCorrelation, {
         reasonCode: dispatcherReasonCode,

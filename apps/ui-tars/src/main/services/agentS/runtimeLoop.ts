@@ -48,6 +48,7 @@ export type AgentSRuntimeErrorCode =
   | 'ACTION_NOT_ALLOWED'
   | 'AGENT_S_CONFIG_ERROR'
   | 'AGENT_S_OPERATOR_ERROR'
+  | 'AGENT_S_OPERATOR_TIMEOUT'
   | 'AGENT_S_SIDECAR_UNHEALTHY'
   | 'AGENT_S_TURN_TIMEOUT'
   | 'AGENT_S_TURN_REQUEST_FAILED'
@@ -234,6 +235,8 @@ const raceTurnOperation = async <T>(
     abortSignal?: AbortSignal;
     correlation?: AgentSCorrelationIds;
     telemetrySource: string;
+    timeoutCode?: AgentSRuntimeErrorCode;
+    timeoutMessage?: string;
   },
 ): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
@@ -301,8 +304,10 @@ const raceTurnOperation = async <T>(
         finish(() => {
           reject(
             runtimeError({
-              code: 'AGENT_S_TURN_TIMEOUT',
-              message: `Agent-S turn timed out in ${params.turnTimeoutMs}ms`,
+              code: params.timeoutCode ?? 'AGENT_S_TURN_TIMEOUT',
+              message:
+                params.timeoutMessage ??
+                `Agent-S turn timed out in ${params.turnTimeoutMs}ms`,
               step: params.step,
             }),
           );
@@ -647,6 +652,8 @@ export const runAgentSRuntimeLoop = async (
         abortSignal: args.getState().abortController?.signal,
         correlation: args.correlation,
         telemetrySource: 'agent_s.runtime.screenshot',
+        timeoutCode: 'AGENT_S_OPERATOR_TIMEOUT',
+        timeoutMessage: `Agent-S operator timed out in ${turnTimeoutMs}ms`,
       });
       const { width, height } = await readImageSize(screenshot.base64).catch(
         (error) => {
@@ -793,6 +800,8 @@ export const runAgentSRuntimeLoop = async (
         abortSignal: args.getState().abortController?.signal,
         correlation: args.correlation,
         telemetrySource: 'agent_s.runtime.execute',
+        timeoutCode: 'AGENT_S_OPERATOR_TIMEOUT',
+        timeoutMessage: `Agent-S operator timed out in ${turnTimeoutMs}ms`,
       });
 
       const nextStatus = resolveStatusFromAction(
