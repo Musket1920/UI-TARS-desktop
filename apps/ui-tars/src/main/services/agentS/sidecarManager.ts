@@ -295,7 +295,8 @@ export const classifyAgentSFailureReason = (
     reasonCode === 'startup_timeout' ||
     reasonCode === 'health_timeout' ||
     reasonCode === 'heartbeat_timeout' ||
-    reasonCode === 'AGENT_S_TURN_TIMEOUT'
+    reasonCode === 'AGENT_S_TURN_TIMEOUT' ||
+    reasonCode === 'AGENT_S_OPERATOR_TIMEOUT'
   ) {
     return 'timeout';
   }

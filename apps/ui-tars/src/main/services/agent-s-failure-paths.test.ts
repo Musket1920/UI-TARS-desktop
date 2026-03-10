@@ -53,6 +53,7 @@ describe('agent-s failure paths', () => {
       fallback: AgentSFallbackClass;
     }> = [
       { reason: 'startup_timeout', fallback: 'timeout' },
+      { reason: 'AGENT_S_OPERATOR_TIMEOUT', fallback: 'timeout' },
       { reason: 'health_http_error', fallback: 'unavailable' },
       { reason: 'AGENT_S_PREDICTION_MALFORMED', fallback: 'invalid_output' },
       { reason: 'circuit_breaker_open', fallback: 'degraded_fallback' },
