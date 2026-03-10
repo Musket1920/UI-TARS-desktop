@@ -375,6 +375,7 @@ export const runAgent = async (
       const shouldRecordRuntimeCircuitFailure =
         runtimeFailureCode !== 'AGENT_S_MAX_STEPS_REACHED' &&
         runtimeFailureCode !== 'AGENT_S_CONFIG_ERROR' &&
+        runtimeFailureCode !== 'AGENT_S_SCREENSHOT_INVALID' &&
         runtimeFailureCode !== 'AGENT_S_OPERATOR_ERROR' &&
         runtimeFailureCode !== 'AGENT_S_OPERATOR_TIMEOUT';
       const breakerAfterRuntimeFailure = shouldRecordRuntimeCircuitFailure

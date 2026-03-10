@@ -322,6 +322,7 @@ describe('dispatcher-agent-s-selected runAgent dispatcher', () => {
   it.each([
     ['AGENT_S_OPERATOR_ERROR', 'operator exploded'],
     ['AGENT_S_OPERATOR_TIMEOUT', 'operator timed out'],
+    ['AGENT_S_SCREENSHOT_INVALID', 'screenshot decode failed'],
   ])(
     'does not record breaker failures for %s runtime fallback',
     async (errorCode, message) => {
