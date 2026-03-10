@@ -63,9 +63,30 @@ describe('createAgentSStatusPoller', () => {
 
     await pollPromise;
 
-    expect(setLoadingStatus).toHaveBeenCalledTimes(1);
-    expect(setLoadingStatus).toHaveBeenCalledWith(true);
     expect(setStatus).not.toHaveBeenCalled();
+  });
+
+  it('clears loading when stopped before fetchStatus settles', async () => {
+    const setLoadingStatus = vi.fn();
+    const deferred = createDeferred<{
+      health: string;
+      runtimeStatus: string;
+    }>();
+
+    const poller = createAgentSStatusPoller<string, string>({
+      isSelected: () => true,
+      setLoadingStatus,
+      setStatus: vi.fn(),
+      fetchStatus: () => deferred.promise,
+    });
+
+    const pollPromise = poller.poll();
+    poller.stop();
+    deferred.resolve({ health: 'healthy', runtimeStatus: 'active' });
+
+    await pollPromise;
+
+    expect(setLoadingStatus.mock.calls).toEqual([[true], [false]]);
   });
 
   it('does not clear state after stop when polling rejects', async () => {
@@ -91,8 +112,6 @@ describe('createAgentSStatusPoller', () => {
 
     await pollPromise;
 
-    expect(setLoadingStatus).toHaveBeenCalledTimes(1);
-    expect(setLoadingStatus).toHaveBeenCalledWith(true);
     expect(onPollError).not.toHaveBeenCalled();
     expect(setStatus).not.toHaveBeenCalled();
   });
