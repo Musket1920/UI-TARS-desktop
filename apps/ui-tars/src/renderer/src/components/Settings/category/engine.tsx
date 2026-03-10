@@ -306,12 +306,14 @@ export const createAgentSStatusLoader = <THealth, TRuntimeStatus>({
       const nextStatus = await fetchStatus(options);
 
       if (!active) {
+        setLoadingStatus(false);
         return;
       }
 
       setStatus(nextStatus);
     } catch (error) {
       if (!active) {
+        setLoadingStatus(false);
         return;
       }
 

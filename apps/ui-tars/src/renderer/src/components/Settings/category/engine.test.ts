@@ -429,7 +429,7 @@ describe('createAgentSStatusLoader', () => {
     });
   });
 
-  it('does not publish fulfilled results after stop', async () => {
+  it('clears loading but does not publish fulfilled results after stop during await', async () => {
     const setLoadingStatus = vi.fn();
     const setStatus = vi.fn();
     const deferred = createDeferred<{
@@ -458,12 +458,12 @@ describe('createAgentSStatusLoader', () => {
 
     await runPromise;
 
-    expect(setLoadingStatus).toHaveBeenCalledTimes(1);
-    expect(setLoadingStatus).toHaveBeenCalledWith(true);
+    expect(setLoadingStatus).toHaveBeenNthCalledWith(1, true);
+    expect(setLoadingStatus).toHaveBeenNthCalledWith(2, false);
     expect(setStatus).not.toHaveBeenCalled();
   });
 
-  it('does not clear state after stop when fetch fails', async () => {
+  it('clears loading but does not clear status after stop when fetch fails', async () => {
     const setLoadingStatus = vi.fn();
     const setStatus = vi.fn();
     const onError = vi.fn();
@@ -488,8 +488,8 @@ describe('createAgentSStatusLoader', () => {
 
     await runPromise;
 
-    expect(setLoadingStatus).toHaveBeenCalledTimes(1);
-    expect(setLoadingStatus).toHaveBeenCalledWith(true);
+    expect(setLoadingStatus).toHaveBeenNthCalledWith(1, true);
+    expect(setLoadingStatus).toHaveBeenNthCalledWith(2, false);
     expect(onError).not.toHaveBeenCalled();
     expect(setStatus).not.toHaveBeenCalled();
   });
