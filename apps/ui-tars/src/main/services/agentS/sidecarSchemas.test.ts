@@ -71,6 +71,28 @@ describe('sidecarSchemas', () => {
     },
   );
 
+  it('parses direct string payloads without envelope extraction', () => {
+    const result = parseSidecarPredictionPayload(
+      'left_click(point=[500, 400])',
+    );
+
+    expect(result).toEqual({
+      action: 'left_click(point=[500, 400])',
+      predictionText: 'left_click(point=[500, 400])',
+    });
+  });
+
+  it('extracts a single-source object envelope action as a string', () => {
+    const result = parseSidecarPredictionPayload({
+      action: 'left_click(point=[500, 400])',
+    });
+
+    expect(result).toEqual({
+      action: 'left_click(point=[500, 400])',
+      predictionText: 'left_click(point=[500, 400])',
+    });
+  });
+
   it('rejects status-only running payloads as explicitly healthy', () => {
     expect(isExplicitHealthyHealthPayload({ status: 'running' })).toBe(false);
     expect(

@@ -90,6 +90,22 @@ const hasMultipleActionSources = (value: {
   prediction?: ActionLike;
 }) => countActionSources(value) > 1;
 
+const hasDirectActionObjectFields = (
+  value: Record<string, unknown>,
+): boolean => {
+  return (
+    'action_type' in value ||
+    'type' in value ||
+    'name' in value ||
+    'action_inputs' in value ||
+    'args' in value ||
+    'arguments' in value ||
+    'params' in value ||
+    'thought' in value ||
+    'reflection' in value
+  );
+};
+
 const PredictionCandidateSchema = z
   .object({
     actions: z.array(ActionLikeSchema).nonempty().optional(),
@@ -198,12 +214,14 @@ const pickPredictionFromCandidate = (
 export const parseSidecarPredictionPayload = (
   payload: unknown,
 ): SidecarPredictionResult | null => {
-  const treatAsMultiSourceEnvelope =
+  const treatAsEnvelope =
     typeof payload === 'object' &&
     payload !== null &&
-    hasMultipleActionSources(payload as PredictionCandidate);
+    (hasMultipleActionSources(payload as PredictionCandidate) ||
+      (hasActionSource(payload as PredictionCandidate) &&
+        !hasDirectActionObjectFields(payload as Record<string, unknown>)));
 
-  if (!treatAsMultiSourceEnvelope) {
+  if (!treatAsEnvelope) {
     const direct = ActionLikeSchema.safeParse(payload);
     if (direct.success) {
       return {
