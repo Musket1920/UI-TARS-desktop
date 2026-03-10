@@ -706,8 +706,21 @@ export const runAgentSRuntimeLoop = async (
         conversations: [screenshotConversation],
       });
 
+      const currentSidecarStatus = deps.sidecarManager.getStatus();
+      if (!currentSidecarStatus.healthy || !currentSidecarStatus.endpoint) {
+        throw runtimeError(
+          {
+            code: 'AGENT_S_SIDECAR_UNHEALTHY',
+            message: 'Agent-S sidecar is unhealthy or endpoint is unavailable',
+            step,
+            sidecarReason: currentSidecarStatus.reason,
+          },
+          currentSidecarStatus,
+        );
+      }
+
       const prediction = await requestSidecarPrediction(deps, {
-        endpoint: sidecarStatus.endpoint,
+        endpoint: currentSidecarStatus.endpoint,
         instruction: args.instruction,
         screenshot,
         screenWidth: width,

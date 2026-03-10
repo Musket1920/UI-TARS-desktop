@@ -470,6 +470,173 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('uses the latest live sidecar endpoint for each predict turn', async () => {
+    const { setState, getState } = createStateHandlers();
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi
+        .fn()
+        .mockResolvedValue({ base64: TINY_PNG_BASE64, scaleFactor: 1 }),
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce({ status: StatusEnum.RUNNING })
+        .mockResolvedValueOnce({ status: StatusEnum.END }),
+    };
+    const liveStatuses: SidecarStatus[] = [
+      {
+        state: 'running',
+        mode: 'embedded',
+        healthy: true,
+        endpoint: 'http://127.0.0.1:10800',
+        pid: 4242,
+        checkedAt: 1_000,
+        lastHeartbeatAt: 1_000,
+      },
+      {
+        state: 'running',
+        mode: 'embedded',
+        healthy: true,
+        endpoint: 'http://127.0.0.1:10900',
+        pid: 4242,
+        checkedAt: 1_100,
+        lastHeartbeatAt: 1_100,
+      },
+    ];
+    let liveStatusIndex = 0;
+    const sidecarManager = {
+      health: vi.fn(async () => ({ ...liveStatuses[0] })),
+      getStatus: vi.fn(() => {
+        const status =
+          liveStatuses[Math.min(liveStatusIndex, liveStatuses.length - 1)];
+        liveStatusIndex += 1;
+        return { ...status };
+      }),
+    };
+    const requestedUrls: string[] = [];
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(async (input) => {
+        requestedUrls.push(String(input));
+        return createPredictResponse('wait', 'keep going');
+      })
+      .mockImplementationOnce(async (input) => {
+        requestedUrls.push(String(input));
+        return createPredictResponse('finished');
+      });
+
+    translateAgentSActionMock.mockImplementation((action: string) => ({
+      ok: true,
+      normalizedAction: action,
+      parsed: {
+        action_type: action,
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    }));
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'follow the current sidecar endpoint',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.END);
+    expect(result.stepsExecuted).toBe(2);
+    expect(requestedUrls).toEqual([
+      'http://127.0.0.1:10800/predict',
+      'http://127.0.0.1:10900/predict',
+    ]);
+    expect(sidecarManager.getStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails cleanly when the live sidecar endpoint disappears between turns', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi
+        .fn()
+        .mockResolvedValue({ base64: TINY_PNG_BASE64, scaleFactor: 1 }),
+      execute: vi.fn(async () => ({ status: StatusEnum.RUNNING })),
+    };
+    const liveStatuses: SidecarStatus[] = [
+      {
+        state: 'running',
+        mode: 'embedded',
+        healthy: true,
+        endpoint: 'http://127.0.0.1:10800',
+        pid: 4242,
+        checkedAt: 1_000,
+        lastHeartbeatAt: 1_000,
+      },
+      {
+        state: 'stopped',
+        mode: 'embedded',
+        healthy: false,
+        endpoint: null,
+        pid: null,
+        checkedAt: 1_100,
+        lastHeartbeatAt: null,
+        reason: 'stop_requested',
+      },
+    ];
+    let liveStatusIndex = 0;
+    const sidecarManager = {
+      health: vi.fn(async () => ({ ...liveStatuses[0] })),
+      getStatus: vi.fn(() => {
+        const status =
+          liveStatuses[Math.min(liveStatusIndex, liveStatuses.length - 1)];
+        liveStatusIndex += 1;
+        return { ...status };
+      }),
+    };
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(createPredictResponse('wait', 'keep going'));
+
+    translateAgentSActionMock.mockImplementation((action: string) => ({
+      ok: true,
+      normalizedAction: action,
+      parsed: {
+        action_type: action,
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    }));
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'stop when the sidecar disappears',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_SIDECAR_UNHEALTHY');
+    expect(result.error?.step).toBe(2);
+    expect(result.error?.sidecarReason).toBe('stop_requested');
+    expect(predictFetch).toHaveBeenCalledTimes(1);
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('resets active lifecycle state after an error exit', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();
