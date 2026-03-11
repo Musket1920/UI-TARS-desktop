@@ -99,6 +99,19 @@ const emitDispatcherFallbackTelemetry = (
   );
 };
 
+const NON_CIRCUITABLE_RUNTIME_FAILURE_CODES = new Set<string>([
+  'AGENT_S_MAX_STEPS_REACHED',
+  'AGENT_S_CONFIG_ERROR',
+  'AGENT_S_SCREENSHOT_INVALID',
+  'AGENT_S_OPERATOR_ERROR',
+  'AGENT_S_OPERATOR_TIMEOUT',
+  'AGENT_S_TURN_REQUEST_CLIENT_ERROR',
+]);
+
+const shouldRecordRuntimeCircuitFailure = (reasonCode: string) => {
+  return !NON_CIRCUITABLE_RUNTIME_FAILURE_CODES.has(reasonCode);
+};
+
 export const runAgent = async (
   setState: (state: AppState) => void,
   getState: () => AppState,
@@ -372,13 +385,9 @@ export const runAgent = async (
       const runtimeFailureCode = runtimeResult.error?.code ?? 'runtime_error';
       const runtimeFailureClass =
         classifyAgentSFailureReason(runtimeFailureCode);
-      const shouldRecordRuntimeCircuitFailure =
-        runtimeFailureCode !== 'AGENT_S_MAX_STEPS_REACHED' &&
-        runtimeFailureCode !== 'AGENT_S_CONFIG_ERROR' &&
-        runtimeFailureCode !== 'AGENT_S_SCREENSHOT_INVALID' &&
-        runtimeFailureCode !== 'AGENT_S_OPERATOR_ERROR' &&
-        runtimeFailureCode !== 'AGENT_S_OPERATOR_TIMEOUT';
-      const breakerAfterRuntimeFailure = shouldRecordRuntimeCircuitFailure
+      const breakerAfterRuntimeFailure = shouldRecordRuntimeCircuitFailure(
+        runtimeFailureCode,
+      )
         ? (agentSSidecarManager.recordCircuitFailure({
             source: 'runtime',
             reasonCode: runtimeFailureCode,

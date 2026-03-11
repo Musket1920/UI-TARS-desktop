@@ -1101,6 +1101,76 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('maps 4xx predict responses to AGENT_S_TURN_REQUEST_CLIENT_ERROR', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = createFakeSidecarManager();
+
+    const clientErrorFetch: typeof fetch = async () =>
+      ({
+        ok: false,
+        status: 422,
+      }) as Response;
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'submit invalid sidecar request',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: clientErrorFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_TURN_REQUEST_CLIENT_ERROR');
+    expect(result.error?.step).toBe(1);
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
+  it('keeps 5xx predict responses on AGENT_S_TURN_REQUEST_FAILED', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = createFakeSidecarManager();
+
+    const serverErrorFetch: typeof fetch = async () =>
+      ({
+        ok: false,
+        status: 503,
+      }) as Response;
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'hit unavailable sidecar',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: serverErrorFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_TURN_REQUEST_FAILED');
+    expect(result.error?.step).toBe(1);
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('finishes with USER_STOPPED without timeout when pending predict is aborted', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();

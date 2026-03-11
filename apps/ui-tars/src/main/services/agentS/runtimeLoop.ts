@@ -51,6 +51,7 @@ export type AgentSRuntimeErrorCode =
   | 'AGENT_S_OPERATOR_TIMEOUT'
   | 'AGENT_S_SIDECAR_UNHEALTHY'
   | 'AGENT_S_TURN_TIMEOUT'
+  | 'AGENT_S_TURN_REQUEST_CLIENT_ERROR'
   | 'AGENT_S_TURN_REQUEST_FAILED'
   | 'AGENT_S_PREDICTION_MALFORMED'
   | 'AGENT_S_TRANSLATION_FAILED'
@@ -336,9 +337,7 @@ const PNG_SIGNATURE = Buffer.from([
 const PNG_IHDR_DATA_LENGTH = 13;
 const PNG_DIMENSION_HEADER_LENGTH = 24;
 
-const readImageSize = async (
-  base64: string,
-): Promise<{ width: number; height: number }> => {
+const readImageSize = (base64: string): { width: number; height: number } => {
   const buffer = Buffer.from(base64, 'base64');
 
   if (buffer.length < PNG_DIMENSION_HEADER_LENGTH) {
@@ -480,7 +479,10 @@ const requestSidecarPrediction = async (
 
     if (!response.ok) {
       throw runtimeError({
-        code: 'AGENT_S_TURN_REQUEST_FAILED',
+        code:
+          response.status >= 400 && response.status < 500
+            ? 'AGENT_S_TURN_REQUEST_CLIENT_ERROR'
+            : 'AGENT_S_TURN_REQUEST_FAILED',
         message: `Agent-S sidecar request failed with status ${response.status}`,
         step: params.step,
       });
@@ -660,8 +662,10 @@ export const runAgentSRuntimeLoop = async (
         timeoutCode: 'AGENT_S_OPERATOR_TIMEOUT',
         timeoutMessage: `Agent-S operator timed out in ${turnTimeoutMs}ms`,
       });
-      const { width, height } = await readImageSize(screenshot.base64).catch(
-        (error) => {
+      const { width, height } = (() => {
+        try {
+          return readImageSize(screenshot.base64);
+        } catch (error) {
           throw runtimeError(
             {
               code: 'AGENT_S_SCREENSHOT_INVALID',
@@ -671,8 +675,8 @@ export const runAgentSRuntimeLoop = async (
             },
             error,
           );
-        },
-      );
+        }
+      })();
 
       if (!width || !height) {
         throw runtimeError({
