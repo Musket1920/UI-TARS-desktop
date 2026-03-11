@@ -174,6 +174,7 @@ const splitArgPairs = (
   let current = '';
   let quote: "'" | '"' | null = null;
   let escaped = false;
+  let depth = 0;
 
   for (const char of rawArgs) {
     if (quote) {
@@ -202,7 +203,19 @@ const splitArgPairs = (
       continue;
     }
 
-    if (char === ',') {
+    if (char === '(' || char === '[' || char === '{') {
+      depth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ')' || char === ']' || char === '}') {
+      depth = Math.max(0, depth - 1);
+      current += char;
+      continue;
+    }
+
+    if (char === ',' && depth === 0) {
       const pair = current.trim();
       if (pair !== '') {
         pairs.push(pair);
@@ -214,7 +227,7 @@ const splitArgPairs = (
     current += char;
   }
 
-  if (quote || escaped) {
+  if (quote || escaped || depth !== 0) {
     return errorResult(
       'TRANSLATION_MALFORMED_INPUT',
       'Unable to parse action arguments',
@@ -308,6 +321,10 @@ type ParsedInput = {
   reflection: string | null;
 };
 
+const hasFunctionCallSyntax = (value: string): boolean => {
+  return /^\s*(?:Action[:：]\s*)?\w+\s*\(.*\)\s*$/s.test(value);
+};
+
 const parseInput = (
   input: AgentSActionLikeInput,
 ): ParsedInput | AgentSActionTranslationError => {
@@ -368,12 +385,27 @@ const parseInput = (
     asNonEmptyString(input.action_type) ??
     asNonEmptyString(input.type) ??
     asNonEmptyString(input.name);
+  const thought = asNonEmptyString(input.thought) ?? '';
+  const reflection = asNonEmptyString(input.reflection);
 
   if (!actionName) {
     return errorResult(
       'TRANSLATION_MALFORMED_INPUT',
       'Missing required action/action_type field',
     );
+  }
+
+  if (hasFunctionCallSyntax(actionName)) {
+    const parsedFromString = parseInput(actionName);
+    if (isTranslationError(parsedFromString)) {
+      return parsedFromString;
+    }
+
+    return {
+      ...parsedFromString,
+      thought,
+      reflection,
+    };
   }
 
   let inputs: Record<string, unknown> = {};
@@ -390,8 +422,8 @@ const parseInput = (
   return {
     action: actionName,
     inputs,
-    thought: asNonEmptyString(input.thought) ?? '',
-    reflection: asNonEmptyString(input.reflection),
+    thought,
+    reflection,
   };
 };
 

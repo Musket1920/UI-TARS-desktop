@@ -33,6 +33,45 @@ describe('action-translator', () => {
     }
   });
 
+  it('re-parses object action call strings and preserves metadata fields', () => {
+    const result = translateAgentSAction({
+      action: 'left_click(point=[500, 400])',
+      thought: 'click the submit button',
+      reflection: 'cursor is aligned',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalizedAction).toBe('left_click');
+      expect(result.parsed).toEqual({
+        action_type: 'left_click',
+        action_inputs: { start_box: '[500,400,500,400]' },
+        thought: 'click the submit button',
+        reflection: 'cursor is aligned',
+      });
+    }
+  });
+
+  it('keeps plain object action names using separate action_inputs', () => {
+    const result = translateAgentSAction({
+      action: 'click',
+      action_inputs: { point: [500, 400] },
+      thought: 'click the submit button',
+      reflection: 'cursor is aligned',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.normalizedAction).toBe('left_click');
+      expect(result.parsed).toEqual({
+        action_type: 'left_click',
+        action_inputs: { start_box: '[500,400,500,400]' },
+        thought: 'click the submit button',
+        reflection: 'cursor is aligned',
+      });
+    }
+  });
+
   it('maps double/right click actions', () => {
     const doubleClick = translateAgentSAction({
       action: 'double_click',
