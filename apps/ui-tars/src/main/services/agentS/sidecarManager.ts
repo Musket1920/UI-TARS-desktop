@@ -169,6 +169,22 @@ const MIN_INTERVAL_MS = 100;
 const MIN_FAILURE_THRESHOLD = 1;
 const EMBEDDED_LAUNCHER_NAME_PATTERN = /^[a-z0-9_.-]+$/i;
 const ALLOWED_EMBEDDED_LAUNCHERS = new Set(['agent_s', 'python', 'python3']);
+const PYTHON_EMBEDDED_PREFIX_FLAG_PATTERN =
+  /^-(?:b{1,2}|B|d|E|i|I|O{1,2}|P|q|s|S|u|v+|x)$/;
+const PYTHON_EMBEDDED_PREFIX_FLAGS_WITH_VALUES = new Set([
+  '--check-hash-based-pycs',
+]);
+const PYTHON_EMBEDDED_LONG_PREFIX_FLAGS = new Set([
+  '--bytes-warning',
+  '--ignore-environment',
+  '--isolated',
+  '--no-site',
+  '--no-user-site',
+  '--quiet',
+  '--utf8',
+  '--verbose',
+  '--warn-default-encoding',
+]);
 
 const stripUnsafeLocalEnvArgs = (args: string[] = []): string[] => {
   return args.filter((arg) => {
@@ -199,6 +215,58 @@ const getEmbeddedLauncherName = (command: string): string | null => {
   return launcherName;
 };
 
+const findEmbeddedPythonModuleArgIndex = (args: string[]): number | null => {
+  let index = 0;
+
+  while (index < args.length) {
+    const currentArg = args[index]?.trim();
+    if (!currentArg) {
+      return null;
+    }
+
+    if (currentArg === '-m') {
+      return index;
+    }
+
+    if (
+      PYTHON_EMBEDDED_PREFIX_FLAG_PATTERN.test(currentArg) ||
+      PYTHON_EMBEDDED_LONG_PREFIX_FLAGS.has(currentArg)
+    ) {
+      index += 1;
+      continue;
+    }
+
+    if (currentArg.startsWith('-W') || currentArg.startsWith('-X')) {
+      if (currentArg.length > 2) {
+        index += 1;
+        continue;
+      }
+
+      const nextArg = args[index + 1]?.trim();
+      if (!nextArg) {
+        return null;
+      }
+
+      index += 2;
+      continue;
+    }
+
+    if (PYTHON_EMBEDDED_PREFIX_FLAGS_WITH_VALUES.has(currentArg)) {
+      const nextArg = args[index + 1]?.trim();
+      if (!nextArg) {
+        return null;
+      }
+
+      index += 2;
+      continue;
+    }
+
+    return null;
+  }
+
+  return null;
+};
+
 const validateEmbeddedLauncher = (
   command: string,
   args: string[] = [],
@@ -215,8 +283,13 @@ const validateEmbeddedLauncher = (
     return null;
   }
 
-  const moduleFlag = args[0]?.trim();
-  const moduleName = args[1]?.trim().toLowerCase();
+  const moduleArgIndex = findEmbeddedPythonModuleArgIndex(args);
+  const moduleFlag =
+    moduleArgIndex === null ? undefined : args[moduleArgIndex]?.trim();
+  const moduleName =
+    moduleArgIndex === null
+      ? undefined
+      : args[moduleArgIndex + 1]?.trim().toLowerCase();
   if (moduleFlag !== '-m' || moduleName !== 'agent_s') {
     return 'Embedded Python sidecar command must launch agent_s via -m agent_s';
   }

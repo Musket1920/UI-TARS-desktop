@@ -1169,6 +1169,16 @@ describe('sidecar-manager', () => {
       command: 'python3',
       args: ['-m', 'agent_s', '--port', '10801'],
     },
+    {
+      name: 'python -u -m agent_s',
+      command: 'python',
+      args: ['-u', '-m', 'agent_s', '--port', '10802'],
+    },
+    {
+      name: 'python -W ignore -m agent_s',
+      command: 'python',
+      args: ['-W', 'ignore', '-m', 'agent_s', '--port', '10803'],
+    },
   ])('allows embedded launcher %s', async ({ command, args }) => {
     const child = new MockChildProcess(10002);
     const spawnMock = vi.fn<SpawnFunction>(
@@ -1228,6 +1238,11 @@ describe('sidecar-manager', () => {
       name: 'python with different module',
       command: 'python3',
       args: ['-m', 'pip'],
+    },
+    {
+      name: 'python script path before -m agent_s',
+      command: 'python',
+      args: ['script.py', '-m', 'agent_s'],
     },
     {
       name: 'path-based denied launcher',
