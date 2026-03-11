@@ -653,7 +653,18 @@ export const runAgentSRuntimeLoop = async (
 
       const turnStartedAt = deps.now();
       const screenshot = await raceTurnOperation(deps, {
-        operation: args.operator.screenshot(),
+        operation: Promise.resolve()
+          .then(() => args.operator.screenshot())
+          .catch((error) => {
+            throw runtimeError(
+              {
+                code: 'AGENT_S_OPERATOR_ERROR',
+                message: error instanceof Error ? error.message : String(error),
+                step,
+              },
+              error,
+            );
+          }),
         step,
         turnTimeoutMs,
         abortSignal: args.getState().abortController?.signal,

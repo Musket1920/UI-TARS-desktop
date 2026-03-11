@@ -784,6 +784,45 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('returns AGENT_S_OPERATOR_ERROR when screenshot capture throws', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const sidecarManager = createFakeSidecarManager();
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi.fn(async () => {
+        throw new Error('screenshot exploded');
+      }),
+      execute: vi.fn(async () => ({
+        status: StatusEnum.END,
+      })),
+    };
+    const predictFetch = vi.fn<typeof fetch>();
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'trigger screenshot failure',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_OPERATOR_ERROR');
+    expect(result.error?.message).toBe('screenshot exploded');
+    expect(result.error?.step).toBe(1);
+    expect(predictFetch).not.toHaveBeenCalled();
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('returns AGENT_S_OPERATOR_ERROR when operator execution throws', async () => {
     const { setState, getState, history } = createStateHandlers();
     const sidecarManager = createFakeSidecarManager();
