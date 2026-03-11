@@ -372,60 +372,64 @@ describe('dispatcher-fallback-legacy runAgent dispatcher', () => {
     });
   });
 
-  it('falls back to legacy path when Agent-S runtime returns error payload', async () => {
-    const { setState, getState } = createStateHandlers();
-    sidecarHealthMock.mockResolvedValue({
-      state: 'running',
-      mode: 'embedded',
-      healthy: true,
-      endpoint: 'http://127.0.0.1:10800',
-      pid: 777,
-      checkedAt: 1_000,
-      lastHeartbeatAt: 1_000,
-    });
-    runAgentSRuntimeLoopMock.mockResolvedValue({
-      status: StatusEnum.ERROR,
-      stepsExecuted: 0,
-      error: {
-        code: 'AGENT_S_PREDICTION_MALFORMED',
-        message: 'malformed',
-        step: 1,
-      },
-    });
+  it.each([
+    ['ACTION_NOT_ALLOWED', 'action not allowed'],
+    ['AGENT_S_TRANSLATION_FAILED', 'translation failed'],
+    ['AGENT_S_PREDICTION_MALFORMED', 'malformed'],
+  ])(
+    'falls back to legacy path without recording circuit failure for %s runtime errors',
+    async (reasonCode, message) => {
+      const { setState, getState } = createStateHandlers();
+      sidecarHealthMock.mockResolvedValue({
+        state: 'running',
+        mode: 'embedded',
+        healthy: true,
+        endpoint: 'http://127.0.0.1:10800',
+        pid: 777,
+        checkedAt: 1_000,
+        lastHeartbeatAt: 1_000,
+      });
+      runAgentSRuntimeLoopMock.mockResolvedValue({
+        status: StatusEnum.ERROR,
+        stepsExecuted: 0,
+        error: {
+          code: reasonCode,
+          message,
+          step: 1,
+        },
+      });
 
-    await runAgent(
-      setState as unknown as RunAgentSetState,
-      getState as unknown as RunAgentGetState,
-    );
+      await runAgent(
+        setState as unknown as RunAgentSetState,
+        getState as unknown as RunAgentGetState,
+      );
 
-    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
-    expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
-    expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
-    expect(setState).toHaveBeenCalledWith(
-      expect.objectContaining({
-        errorMsg: null,
-      }),
-    );
+      expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+      expect(guiAgentCtorMock).toHaveBeenCalledTimes(1);
+      expect(guiAgentRunMock).toHaveBeenCalledTimes(1);
+      expect(setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errorMsg: null,
+        }),
+      );
 
-    // Agent-S attempted and failed, then fell back: exactly one lifecycle pair spanning both
-    expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
-    expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
-    expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
-    expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+      // Agent-S attempted and failed, then fell back: exactly one lifecycle pair spanning both
+      expect(beforeAgentRunMock).toHaveBeenCalledTimes(1);
+      expect(afterAgentRunMock).toHaveBeenCalledTimes(1);
+      expect(beforeAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
+      expect(afterAgentRunMock).toHaveBeenCalledWith(Operator.LocalComputer);
 
-    const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
-      (call) =>
-        call[0] === 'agent_s.fallback.triggered' &&
-        call[1]?.source === 'agent_s.dispatcher' &&
-        call[1]?.reasonCode === 'AGENT_S_PREDICTION_MALFORMED',
-    );
+      const fallbackEvent = emitAgentSTelemetryMock.mock.calls.find(
+        (call) =>
+          call[0] === 'agent_s.fallback.triggered' &&
+          call[1]?.source === 'agent_s.dispatcher' &&
+          call[1]?.reasonCode === reasonCode,
+      );
 
-    expect(fallbackEvent).toBeTruthy();
-    expect(sidecarRecordCircuitFailureMock).toHaveBeenCalledWith({
-      source: 'runtime',
-      reasonCode: 'AGENT_S_PREDICTION_MALFORMED',
-    });
-  });
+      expect(fallbackEvent).toBeTruthy();
+      expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('falls back to legacy path without recording circuit failure for 4xx runtime errors', async () => {
     const { setState, getState } = createStateHandlers();
