@@ -31,6 +31,7 @@ export type SidecarFailureReason =
   | 'startup_failed'
   | 'invalid_endpoint'
   | 'health_http_error'
+  | 'health_payload_invalid'
   | 'health_timeout'
   | 'health_probe_failed'
   | 'heartbeat_failed'
@@ -386,6 +387,7 @@ export const classifyAgentSFailureReason = (
     reasonCode === 'startup_failed' ||
     reasonCode === 'invalid_endpoint' ||
     reasonCode === 'health_http_error' ||
+    reasonCode === 'health_payload_invalid' ||
     reasonCode === 'health_probe_failed' ||
     reasonCode === 'heartbeat_failed' ||
     reasonCode === 'child_process_exit' ||
@@ -1171,8 +1173,14 @@ export class AgentSSidecarManager {
       let payload: unknown;
       try {
         payload = await response.json();
-      } catch {
-        payload = undefined;
+      } catch (error) {
+        return {
+          healthy: false,
+          checkedAt,
+          reason: 'health_payload_invalid',
+          httpStatus: response.status,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
 
       const healthyFromPayload = this.extractHealthFromPayload(payload);

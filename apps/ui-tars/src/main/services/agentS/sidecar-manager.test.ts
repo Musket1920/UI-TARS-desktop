@@ -501,6 +501,51 @@ describe('sidecar-manager', () => {
     );
   });
 
+  it('returns health_payload_invalid for a 200 health response with invalid JSON', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(createHealthyResponse())
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('Unexpected token < in JSON');
+        },
+      } as unknown as Response);
+
+    const manager = new AgentSSidecarManager({
+      fetch: fetchMock,
+      now: () => Date.now(),
+    });
+
+    const started = await manager.start({
+      mode: 'external',
+      endpoint: 'https://agent-s.local',
+      startupTimeoutMs: 1_000,
+      startupPollIntervalMs: 100,
+      heartbeatIntervalMs: 5_000,
+      healthTimeoutMs: 300,
+    });
+
+    expect(started.state).toBe('running');
+    expect(started.healthy).toBe(true);
+
+    const failedProbe = await manager.health({ probe: true });
+
+    expect(failedProbe.state).toBe('unhealthy');
+    expect(failedProbe.healthy).toBe(false);
+    expect(failedProbe.transientProbeFailure).toBe(true);
+    expect(failedProbe.reason).toBe('health_payload_invalid');
+    expect(failedProbe.reason).not.toBe('health_http_error');
+    expect(failedProbe.httpStatus).toBe(200);
+    expect(failedProbe.error).toContain('Unexpected token < in JSON');
+
+    const storedStatus = manager.getStatus();
+    expect(storedStatus.state).toBe('running');
+    expect(storedStatus.healthy).toBe(true);
+    expect(storedStatus.reason).toBeUndefined();
+  });
+
   it('maps explicit live probe connection failures to health_probe_failed', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
