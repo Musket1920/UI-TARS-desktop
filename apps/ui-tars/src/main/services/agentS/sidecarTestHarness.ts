@@ -176,7 +176,7 @@ export interface RuntimeSidecarHarness {
   fixtureMode: SidecarFixtureMode;
   start: () => Promise<SidecarStatus>;
   stop: () => Promise<SidecarStatus>;
-  health: () => Promise<SidecarStatus>;
+  health: (options?: { probe?: boolean }) => Promise<SidecarStatus>;
   getStatus: () => SidecarStatus;
   setTelemetryCorrelation: (correlation: Record<string, string | null>) => void;
 }
@@ -204,6 +204,38 @@ export const createRuntimeSidecarHarness = (
   const statusWithOverrides = { ...baseStatus, ...overrides };
   let currentStatus: SidecarStatus = createStoppedStatus();
 
+  const createModeHealthStatus = (): SidecarStatus => {
+    if (mode === 'timeout') {
+      return {
+        ...createFailureStatus('startup_timeout', overrides),
+        state: 'timeout',
+        healthy: false,
+        reason: 'startup_timeout' as const,
+        transientProbeFailure: undefined,
+      };
+    }
+    if (mode === 'malformed') {
+      return {
+        ...createFailureStatus('health_http_error', overrides),
+        state: 'unhealthy',
+        healthy: false,
+        reason: 'health_http_error' as const,
+        transientProbeFailure: undefined,
+      };
+    }
+    if (mode === 'crash') {
+      return {
+        ...createFailureStatus('child_process_exit', overrides),
+        state: 'unhealthy',
+        healthy: false,
+        reason: 'child_process_exit' as const,
+        transientProbeFailure: undefined,
+      };
+    }
+
+    return statusWithOverrides;
+  };
+
   return {
     fixtureMode: mode,
     start: async () => {
@@ -213,20 +245,23 @@ export const createRuntimeSidecarHarness = (
       currentStatus = statusWithOverrides;
       return currentStatus;
     },
-    health: async () => {
-      if (mode === 'timeout') {
-        currentStatus = createFailureStatus('startup_timeout', overrides);
+    health: async (options = {}) => {
+      const nextStatus = createModeHealthStatus();
+
+      if (
+        options.probe &&
+        !nextStatus.healthy &&
+        currentStatus.state === 'running' &&
+        currentStatus.healthy
+      ) {
+        currentStatus = {
+          ...nextStatus,
+          transientProbeFailure: true,
+        };
         return currentStatus;
       }
-      if (mode === 'malformed') {
-        currentStatus = createFailureStatus('health_http_error', overrides);
-        return currentStatus;
-      }
-      if (mode === 'crash') {
-        currentStatus = createFailureStatus('child_process_exit', overrides);
-        return currentStatus;
-      }
-      currentStatus = statusWithOverrides;
+
+      currentStatus = nextStatus;
       return currentStatus;
     },
     stop: async () => {

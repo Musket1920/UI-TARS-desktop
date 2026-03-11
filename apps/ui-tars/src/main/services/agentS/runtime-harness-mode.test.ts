@@ -92,4 +92,28 @@ describe('runtime-harness-mode createRuntimeSidecarHarness', () => {
     expect(harness.getStatus()).toBe(stopped);
     expect(harness.setTelemetryCorrelation({ foo: 'bar' })).toBeUndefined();
   });
+
+  it('accepts probe-style health calls and marks probe failures explicitly', async () => {
+    const harness = createRuntimeSidecarHarness('malformed', {
+      state: 'running',
+      healthy: true,
+    });
+
+    const started = await harness.start();
+    expect(started.state).toBe('running');
+    expect(started.healthy).toBe(true);
+
+    const probed = await harness.health({ probe: true });
+    expect(probed.state).toBe('unhealthy');
+    expect(probed.healthy).toBe(false);
+    expect(probed.reason).toBe('health_http_error');
+    expect(probed.transientProbeFailure).toBe(true);
+    expect(harness.getStatus()).toBe(probed);
+
+    const nonProbeHealth = await harness.health();
+    expect(nonProbeHealth.state).toBe('unhealthy');
+    expect(nonProbeHealth.healthy).toBe(false);
+    expect(nonProbeHealth.reason).toBe('health_http_error');
+    expect(nonProbeHealth.transientProbeFailure).toBeUndefined();
+  });
 });
