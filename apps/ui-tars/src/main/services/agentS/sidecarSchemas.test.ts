@@ -93,11 +93,63 @@ describe('sidecarSchemas', () => {
     });
   });
 
-  it('rejects status-only running payloads as explicitly healthy', () => {
+  it.each([
+    {
+      label: 'thought',
+      payload: {
+        action: 'left_click(point=[500, 400])',
+        thought: 'click the button',
+      },
+    },
+    {
+      label: 'reflection',
+      payload: {
+        action: 'left_click(point=[500, 400])',
+        reflection: 'the prior attempt missed the target',
+      },
+    },
+  ])(
+    'treats string action payloads with $label metadata as envelopes',
+    ({ payload }) => {
+      const result = parseSidecarPredictionPayload(payload);
+
+      expect(result).toEqual({
+        action: 'left_click(point=[500, 400])',
+        predictionText: 'left_click(point=[500, 400])',
+      });
+    },
+  );
+
+  it('keeps direct action objects on the direct-action path', () => {
+    const result = parseSidecarPredictionPayload({
+      action_type: 'left_click',
+      action_inputs: { point: [500, 400] },
+      thought: 'click the button',
+    });
+
+    expect(result).toEqual({
+      action: {
+        action_type: 'left_click',
+        action_inputs: { point: [500, 400] },
+        thought: 'click the button',
+      },
+      predictionText: JSON.stringify({
+        action_type: 'left_click',
+        action_inputs: { point: [500, 400] },
+        thought: 'click the button',
+      }),
+    });
+  });
+
+  it('rejects running payloads and accepts explicit healthy statuses', () => {
     expect(isExplicitHealthyHealthPayload({ status: 'running' })).toBe(false);
     expect(
       isExplicitHealthyHealthPayload({ healthy: true, status: 'running' }),
-    ).toBe(true);
+    ).toBe(false);
+
+    expect(isExplicitHealthyHealthPayload({ healthy: true })).toBe(true);
+    expect(isExplicitHealthyHealthPayload({ status: 'ok' })).toBe(true);
     expect(isExplicitHealthyHealthPayload({ status: 'healthy' })).toBe(true);
+    expect(isExplicitHealthyHealthPayload({ status: 'up' })).toBe(true);
   });
 });

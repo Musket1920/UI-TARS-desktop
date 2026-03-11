@@ -100,9 +100,7 @@ const hasDirectActionObjectFields = (
     'action_inputs' in value ||
     'args' in value ||
     'arguments' in value ||
-    'params' in value ||
-    'thought' in value ||
-    'reflection' in value
+    'params' in value
   );
 };
 
@@ -142,11 +140,6 @@ const PredictionEnvelopeSchema = z
     },
   );
 
-const HealthyStatusSchema = z.preprocess(
-  normalizeStatus,
-  z.enum(['ok', 'healthy', 'running', 'up']),
-);
-
 const ExplicitHealthyStatusSchema = z.preprocess(
   normalizeStatus,
   z.enum(['ok', 'healthy', 'up']),
@@ -156,7 +149,7 @@ const HealthyPayloadSchema = z.union([
   z
     .object({
       healthy: z.literal(true),
-      status: HealthyStatusSchema.optional(),
+      status: ExplicitHealthyStatusSchema.optional(),
     })
     .passthrough(),
   z
