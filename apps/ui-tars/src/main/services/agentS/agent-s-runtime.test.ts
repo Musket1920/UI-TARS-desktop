@@ -1140,6 +1140,50 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('preserves thrown predict JSON parse failures as AGENT_S_PREDICTION_MALFORMED', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const sidecarManager = createFakeSidecarManager();
+
+    const invalidJsonFetch: typeof fetch = async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('Unexpected token < in JSON at position 0');
+        },
+      }) as unknown as Response;
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'produce invalid prediction json',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: invalidJsonFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.ERROR);
+    expect(result.error?.code).toBe('AGENT_S_PREDICTION_MALFORMED');
+    expect(result.error?.step).toBe(1);
+    expect(result.error?.message).toContain(
+      'Agent-S sidecar returned invalid JSON prediction payload',
+    );
+    expect(result.error?.message).toContain(
+      'Unexpected token < in JSON at position 0',
+    );
+    expect(operator.execute).not.toHaveBeenCalled();
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      true,
+    );
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('maps 4xx predict responses to AGENT_S_TURN_REQUEST_CLIENT_ERROR', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator = createOperator();

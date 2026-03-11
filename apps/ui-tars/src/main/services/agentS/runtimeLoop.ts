@@ -30,7 +30,6 @@ import {
   agentSSidecarManager,
   classifyAgentSFailureReason,
   type SidecarFailureReason,
-  type SidecarStatus,
 } from './sidecarManager';
 import {
   parseSidecarPredictionPayload,
@@ -488,7 +487,23 @@ const requestSidecarPrediction = async (
       });
     }
 
-    const payload = (await response.json().catch(() => null)) as unknown;
+    let payload: unknown;
+
+    try {
+      payload = await response.json();
+    } catch (error) {
+      throw runtimeError(
+        {
+          code: 'AGENT_S_PREDICTION_MALFORMED',
+          message:
+            'Agent-S sidecar returned invalid JSON prediction payload' +
+            `: ${error instanceof Error ? error.message : String(error)}`,
+          step: params.step,
+        },
+        error,
+      );
+    }
+
     const parsed = parseSidecarPredictionPayload(payload);
 
     if (!parsed) {
@@ -948,13 +963,4 @@ export const runAgentSRuntimeLoop = async (
   } finally {
     setAgentSActive(false);
   }
-};
-
-export const toSidecarFailureStatus = (status: SidecarStatus) => {
-  return {
-    healthy: status.healthy,
-    state: status.state,
-    reason: status.reason,
-    endpoint: status.endpoint,
-  };
 };
