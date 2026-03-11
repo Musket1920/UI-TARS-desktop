@@ -170,11 +170,16 @@ const hasUnsafeTopLevelCode = (value: string): boolean => {
 const splitArgPairs = (
   rawArgs: string,
 ): string[] | AgentSActionTranslationError => {
+  const closingToOpeningBracket: Record<')' | ']' | '}', '(' | '[' | '{'> = {
+    ')': '(',
+    ']': '[',
+    '}': '{',
+  };
   const pairs: string[] = [];
   let current = '';
   let quote: "'" | '"' | null = null;
   let escaped = false;
-  let depth = 0;
+  const bracketStack: Array<'(' | '[' | '{'> = [];
 
   for (const char of rawArgs) {
     if (quote) {
@@ -204,18 +209,21 @@ const splitArgPairs = (
     }
 
     if (char === '(' || char === '[' || char === '{') {
-      depth += 1;
+      bracketStack.push(char);
       current += char;
       continue;
     }
 
     if (char === ')' || char === ']' || char === '}') {
-      depth = Math.max(0, depth - 1);
+      const expectedOpeningBracket = closingToOpeningBracket[char];
+      if (bracketStack[bracketStack.length - 1] === expectedOpeningBracket) {
+        bracketStack.pop();
+      }
       current += char;
       continue;
     }
 
-    if (char === ',' && depth === 0) {
+    if (char === ',' && bracketStack.length === 0) {
       const pair = current.trim();
       if (pair !== '') {
         pairs.push(pair);
@@ -227,7 +235,7 @@ const splitArgPairs = (
     current += char;
   }
 
-  if (quote || escaped || depth !== 0) {
+  if (quote || escaped || bracketStack.length !== 0) {
     return errorResult(
       'TRANSLATION_MALFORMED_INPUT',
       'Unable to parse action arguments',

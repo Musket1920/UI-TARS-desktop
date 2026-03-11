@@ -223,6 +223,18 @@ describe('action-translator', () => {
     }
   });
 
+  it('rejects mismatched closers without splitting on the wrong comma', () => {
+    const result = translateAgentSAction(
+      'left_click(point=[500), bbox=[1, 2, 3, 4])',
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'TRANSLATION_MALFORMED_INPUT',
+      message: 'Unable to parse action arguments',
+    });
+  });
+
   it('accepts intentionally empty type content when the field is present', () => {
     const result = translateAgentSAction("type(text='')");
 
