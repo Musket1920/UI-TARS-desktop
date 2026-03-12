@@ -18,6 +18,14 @@ import ElectronStore from 'electron-store';
 
 import * as env from '@main/env';
 import { logger } from '@main/logger';
+import {
+  agentSSidecarManager,
+  DEFAULT_HEALTH_TIMEOUT_MS,
+  DEFAULT_HEARTBEAT_INTERVAL_MS,
+  DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  DEFAULT_STARTUP_POLL_INTERVAL_MS,
+  DEFAULT_STARTUP_TIMEOUT_MS,
+} from '@main/services/agentS/sidecarManager';
 import { createMainWindow } from '@main/window/index';
 import { registerIpcMain } from '@ui-tars/electron-ipc/main';
 import { ipcRoutes } from './ipcRoutes';
@@ -25,13 +33,166 @@ import { ipcRoutes } from './ipcRoutes';
 import { UTIOService } from './services/utio';
 import { store } from './store/create';
 import { SettingStore } from './store/setting';
+import { AgentSSidecarMode, EngineMode } from './store/types';
 import { createTray } from './tray';
 import { registerSettingsHandlers } from './services/settings';
 import { sanitizeState } from './utils/sanitizeState';
 import { windowManager } from './services/windowManager';
 import { checkBrowserAvailability } from './services/browserCheck';
+import { resolveSidecarEndpoint } from './utils/resolveSidecarEndpoint';
 
 const { isProd } = env;
+
+let hasHandledBeforeQuit = false;
+
+const parseSidecarArgs = (rawArgs: string | undefined): string[] => {
+  if (!rawArgs) {
+    return [];
+  }
+
+  const args: string[] = [];
+  let currentArg = '';
+  let activeQuote: '"' | "'" | null = null;
+
+  const pushCurrentArg = () => {
+    if (currentArg) {
+      args.push(currentArg);
+    }
+
+    currentArg = '';
+  };
+
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const char = rawArgs[index];
+
+    if (activeQuote) {
+      const nextChar = rawArgs[index + 1];
+
+      if (char === '\\' && (nextChar === activeQuote || nextChar === '\\')) {
+        currentArg += nextChar;
+        index += 1;
+        continue;
+      }
+
+      if (char === activeQuote) {
+        activeQuote = null;
+        continue;
+      }
+
+      currentArg += char;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      activeQuote = char;
+      continue;
+    }
+
+    if (char === ' ') {
+      pushCurrentArg();
+      continue;
+    }
+
+    currentArg += char;
+  }
+
+  pushCurrentArg();
+
+  if (activeQuote) {
+    const quoteType = activeQuote === '"' ? 'double' : 'single';
+    logger.warn(
+      '[agentS sidecar] AGENT_S_SIDECAR_ARGS ended with an unterminated ' +
+        quoteType +
+        ' quote; arguments may be incorrect',
+    );
+  }
+
+  return args;
+};
+
+const startAgentSSidecarIfNeeded = async (
+  settings = SettingStore.getStore(),
+) => {
+  if (settings.engineMode !== EngineMode.AgentS) {
+    const status = await agentSSidecarManager.stop();
+    logger.info(
+      '[agentS sidecar] manager disabled because engine mode is not Agent-S',
+      {
+        state: status.state,
+      },
+    );
+    return;
+  }
+
+  const endpoint = resolveSidecarEndpoint(
+    settings.agentSSidecarUrl,
+    settings.agentSSidecarPort,
+  );
+  const startupTimeoutMs = DEFAULT_STARTUP_TIMEOUT_MS;
+  const startupPollIntervalMs = DEFAULT_STARTUP_POLL_INTERVAL_MS;
+  const heartbeatIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const healthTimeoutMs = DEFAULT_HEALTH_TIMEOUT_MS;
+  const shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS;
+
+  if (settings.agentSSidecarMode === AgentSSidecarMode.Remote) {
+    const status = await agentSSidecarManager.start({
+      mode: 'external',
+      endpoint,
+      startupTimeoutMs,
+      startupPollIntervalMs,
+      heartbeatIntervalMs,
+      healthTimeoutMs,
+      shutdownTimeoutMs,
+    });
+
+    logger.info('[agentS sidecar] external endpoint status', {
+      state: status.state,
+      healthy: status.healthy,
+      reason: status.reason,
+      endpoint: status.endpoint,
+    });
+    return;
+  }
+
+  const command = process.env.AGENT_S_SIDECAR_COMMAND?.trim() || 'agent_s';
+  const args = parseSidecarArgs(process.env.AGENT_S_SIDECAR_ARGS);
+  const sidecarEnv = { ...process.env };
+
+  delete sidecarEnv.AGENT_S_ENABLE_LOCAL_ENV;
+
+  const status = await agentSSidecarManager.start({
+    mode: 'embedded',
+    command,
+    args,
+    endpoint,
+    env: sidecarEnv,
+    startupTimeoutMs,
+    startupPollIntervalMs,
+    heartbeatIntervalMs,
+    healthTimeoutMs,
+    shutdownTimeoutMs,
+  });
+
+  logger.info('[agentS sidecar] embedded status', {
+    state: status.state,
+    healthy: status.healthy,
+    reason: status.reason,
+    endpoint: status.endpoint,
+    pid: status.pid,
+  });
+};
+
+const startAgentSSidecarInBackground = (
+  startSidecar: () => Promise<void> = startAgentSSidecarIfNeeded,
+  logError: typeof logger.error = logger.error,
+) => {
+  void startSidecar().catch((error) => {
+    logError(
+      '[agentS sidecar] failed to start during app initialization',
+      error,
+    );
+  });
+};
 
 // 在应用初始化之前启用辅助功能支持
 app.commandLine.appendSwitch('force-renderer-accessibility');
@@ -123,10 +284,29 @@ const initializeApp = async () => {
     }
   });
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (hasHandledBeforeQuit) {
+      logger.info('before-quit (finalize)');
+      const windows = BrowserWindow.getAllWindows();
+      windows.forEach((window) => {
+        window.destroy();
+      });
+      return;
+    }
+
     logger.info('before-quit');
-    const windows = BrowserWindow.getAllWindows();
-    windows.forEach((window) => window.destroy());
+    hasHandledBeforeQuit = true;
+
+    event.preventDefault();
+
+    void agentSSidecarManager
+      .stop()
+      .catch((error) => {
+        logger.error('[agentS sidecar] failed to stop before quit', error);
+      })
+      .finally(() => {
+        app.quit();
+      });
   });
 
   app.on('quit', () => {
@@ -160,6 +340,8 @@ const initializeApp = async () => {
       logger.error('Failed to update preset:', error);
     }
   }
+
+  startAgentSSidecarInBackground();
 };
 
 /**
@@ -195,7 +377,9 @@ const registerIPCHandlers = (
     await UTIOService.getInstance().shareReport(params);
   });
 
-  registerSettingsHandlers();
+  registerSettingsHandlers(async (settings) => {
+    await startAgentSSidecarIfNeeded(settings);
+  });
   // register ipc services routes
   registerIpcMain(ipcRoutes);
 

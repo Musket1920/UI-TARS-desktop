@@ -7,15 +7,19 @@ import yaml from 'js-yaml';
 
 import * as env from '@main/env';
 import { logger } from '@main/logger';
+import { sanitizeAgentSPayload } from '@main/services/agentS/telemetry';
 
 import {
   LocalStore,
   SearchEngineForSettings,
   VLMProviderV2,
   Operator,
+  EngineMode,
+  AgentSSidecarMode,
 } from './types';
 import { validatePreset } from './validate';
 import { BrowserWindow } from 'electron';
+import { enforceAgentSSafetyPolicy } from './safetyPolicy';
 
 export const DEFAULT_SETTING: LocalStore = {
   language: 'en',
@@ -28,6 +32,9 @@ export const DEFAULT_SETTING: LocalStore = {
   loopIntervalInMs: 1000,
   searchEngineForBrowser: SearchEngineForSettings.GOOGLE,
   operator: Operator.LocalComputer,
+  engineMode: EngineMode.UITARS,
+  agentSSidecarMode: AgentSSidecarMode.Embedded,
+  agentSEnableLocalEnv: false,
   reportStorageBaseUrl: '',
   utioBaseUrl: '',
 };
@@ -43,12 +50,64 @@ export class SettingStore {
       });
 
       SettingStore.instance.onDidAnyChange((newValue, oldValue) => {
-        logger.log(
-          `SettingStore: ${JSON.stringify(oldValue)} changed to ${JSON.stringify(newValue)}`,
-        );
+        const safeValue = enforceAgentSSafetyPolicy(newValue as LocalStore);
+        const didMutateUnsafeSetting =
+          safeValue.agentSEnableLocalEnv !==
+            (newValue as LocalStore).agentSEnableLocalEnv ||
+          safeValue.maxLoopCount !== (newValue as LocalStore).maxLoopCount ||
+          safeValue.loopIntervalInMs !==
+            (newValue as LocalStore).loopIntervalInMs ||
+          safeValue.agentSTurnTimeoutMs !==
+            (newValue as LocalStore).agentSTurnTimeoutMs;
+
+        if (didMutateUnsafeSetting) {
+          SettingStore.instance.set(safeValue);
+          return;
+        }
+
+        const previousState = (oldValue ?? ({} as LocalStore)) as LocalStore;
+        const changedKeys = (
+          Object.keys(safeValue) as Array<keyof LocalStore>
+        ).filter((key) => {
+          return !Object.is(previousState[key], safeValue[key]);
+        });
+
+        if (changedKeys.length > 0) {
+          const formatValueForLog = (value: unknown): string => {
+            if (value === undefined) {
+              return 'undefined';
+            }
+            try {
+              const stringified = JSON.stringify(value);
+              return stringified === undefined ? 'undefined' : stringified;
+            } catch (error) {
+              logger.warn(
+                'SettingStore: failed to stringify value for logging',
+                error,
+              );
+              return '"[UNSERIALIZABLE]"';
+            }
+          };
+
+          const summary = changedKeys
+            .map((key) => {
+              const maskedPrevious = sanitizeAgentSPayload({
+                [key]: previousState[key],
+              })[key];
+              const maskedCurrent = sanitizeAgentSPayload({
+                [key]: safeValue[key],
+              })[key];
+              return `${key}: ${formatValueForLog(maskedPrevious)} -> ${formatValueForLog(maskedCurrent)}`;
+            })
+            .join('; ');
+
+          logger.log(
+            `SettingStore updated (${changedKeys.length} keys): ${summary}`,
+          );
+        }
         // Notify that value updated
         BrowserWindow.getAllWindows().forEach((win) => {
-          win.webContents.send('setting-updated', newValue);
+          win.webContents.send('setting-updated', safeValue);
         });
       });
     }
@@ -59,11 +118,17 @@ export class SettingStore {
     key: K,
     value: LocalStore[K],
   ): void {
-    SettingStore.getInstance().set(key, value);
+    const current = SettingStore.getStore();
+    const safeState = enforceAgentSSafetyPolicy({
+      ...current,
+      [key]: value,
+    } as LocalStore);
+
+    SettingStore.getInstance().set(key, safeState[key]);
   }
 
   public static setStore(state: LocalStore): void {
-    SettingStore.getInstance().set(state);
+    SettingStore.getInstance().set(enforceAgentSSafetyPolicy(state));
   }
 
   public static get<K extends keyof LocalStore>(key: K): LocalStore[K] {
@@ -75,11 +140,11 @@ export class SettingStore {
   }
 
   public static getStore(): LocalStore {
-    return SettingStore.getInstance().store;
+    return enforceAgentSSafetyPolicy(SettingStore.getInstance().store);
   }
 
   public static clear(): void {
-    SettingStore.getInstance().set(DEFAULT_SETTING);
+    SettingStore.getInstance().set(enforceAgentSSafetyPolicy(DEFAULT_SETTING));
   }
 
   public static openInEditor(): void {
@@ -101,7 +166,7 @@ export class SettingStore {
       const validatedPreset = validatePreset(preset);
 
       SettingStore.setStore({
-        ...validatedPreset,
+        ...enforceAgentSSafetyPolicy(validatedPreset),
         presetSource: {
           type: 'remote',
           url,
@@ -144,5 +209,5 @@ export class SettingStore {
 async function parsePresetYaml(yamlContent: string): Promise<LocalStore> {
   const preset = yaml.load(yamlContent);
   const validatedPreset = validatePreset(preset);
-  return validatedPreset;
+  return enforceAgentSSafetyPolicy(validatedPreset);
 }

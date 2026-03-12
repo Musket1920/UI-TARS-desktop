@@ -4,7 +4,19 @@
  */
 import { z } from 'zod';
 
-import { SearchEngineForSettings, VLMProviderV2, Operator } from './types';
+import {
+  AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS,
+  AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
+  AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
+  AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS,
+} from './safetyPolicy';
+import {
+  SearchEngineForSettings,
+  VLMProviderV2,
+  Operator,
+  EngineMode,
+  AgentSSidecarMode,
+} from './types';
 
 const PresetSourceSchema = z.object({
   type: z.enum(['local', 'remote']),
@@ -26,8 +38,22 @@ export const PresetSchema = z.object({
   language: z.enum(['zh', 'en']).optional(),
   screenshotScale: z.number().min(0.1).max(1).optional(),
   maxLoopCount: z.number().min(25).max(200).optional(),
-  loopIntervalInMs: z.number().min(0).max(3000).optional(),
+  loopIntervalInMs: z
+    .number()
+    .min(AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS)
+    .max(AGENT_S_SAFE_MAX_LOOP_INTERVAL_MS)
+    .optional(),
+  agentSTurnTimeoutMs: z
+    .number()
+    .min(AGENT_S_SAFE_MIN_TURN_TIMEOUT_MS)
+    .max(AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS)
+    .optional(),
   searchEngineForBrowser: z.nativeEnum(SearchEngineForSettings).optional(),
+  engineMode: z.nativeEnum(EngineMode).optional(),
+  agentSSidecarMode: z.nativeEnum(AgentSSidecarMode).optional(),
+  agentSSidecarUrl: z.string().url().optional(),
+  agentSSidecarPort: z.number().int().min(1).max(65535).optional(),
+  agentSEnableLocalEnv: z.boolean().optional(),
 
   // Report Settings
   reportStorageBaseUrl: z.string().url().optional(),

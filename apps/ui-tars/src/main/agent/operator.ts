@@ -85,9 +85,15 @@ export class NutJSElectronOperator extends NutJSOperator {
 
   async execute(params: ExecuteParams): Promise<ExecuteOutput> {
     const { action_type, action_inputs } = params.parsedPrediction;
+    const rawContent = action_inputs?.content;
 
-    if (action_type === 'type' && env.isWindows && action_inputs?.content) {
-      const content = action_inputs.content?.trim();
+    if (
+      action_type === 'type' &&
+      env.isWindows &&
+      typeof rawContent === 'string' &&
+      (rawContent === '' || rawContent.trim() !== '')
+    ) {
+      const content = rawContent.trim();
 
       logger.info('[device] type', content);
       const stripContent = content.replace(/\\n$/, '').replace(/\n$/, '');

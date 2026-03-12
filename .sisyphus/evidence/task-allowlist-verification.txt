@@ -1,0 +1,5 @@
+Task: embedded-launcher-allowlist-verification
+
+Command: pnpm --filter ui-tars-desktop exec vitest run src/main/services/agentS/sidecar-manager.test.ts
+Status: PASS
+Evidence: Targeted sidecar-manager allowlist verification passed.

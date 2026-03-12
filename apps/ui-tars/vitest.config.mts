@@ -16,6 +16,8 @@ export default defineProject({
     globals: true,
     environment: 'node',
     includeSource: [resolve(__dirname, '.')],
+    include: ['src/**/*.test.ts'],
+    exclude: ['e2e/**', 'node_modules/**'],
   },
 
   plugins: [

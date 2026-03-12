@@ -277,6 +277,20 @@ UI-TARS Desktop is a native GUI agent for your local computer, driven by [UI-TAR
 
 See [Quick Start](./docs/quick-start.md)
 
+#### Agent-S Engine Settings
+
+UI-TARS Desktop can run with the legacy UI-TARS engine or the Agent-S sidecar engine. These settings are in the app Settings and are persisted in the local config.
+
+- **Engine Mode** (`engineMode`): switch between **UI-TARS (Legacy)** and **Agent-S (Sidecar)**.
+- **Sidecar Mode** (`agentSSidecarMode`): choose **embedded** (UI-TARS Desktop starts the sidecar process) or **external** (connect to an already running sidecar).
+- **Sidecar endpoint** (`agentSSidecarUrl` / `agentSSidecarPort`):
+  - Default endpoint is `http://127.0.0.1:10800`.
+  - If you set a URL without a port, the configured port is applied.
+  - If the URL is invalid, it falls back to the default endpoint.
+- **Safety defaults**:
+  - `agentSEnableLocalEnv` is enforced as **off** and cannot be persisted as enabled.
+  - If Agent-S is selected but the sidecar is unavailable or unhealthy, the app falls back to the legacy UI-TARS engine.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).

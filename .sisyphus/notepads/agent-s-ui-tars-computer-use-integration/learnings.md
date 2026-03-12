@@ -1,0 +1,2 @@
+#HW|- 2026-03-06: `AgentSSidecarManager` now fail-closes embedded startup before `spawn()` unless the launcher is exactly `agent_s` or `python`/`python3` with args starting `-m agent_s`, while still preserving existing `--enable_local_env` stripping.
+#EQ|- 2026-03-07: PR #3 CI failure stemmed from Codecov rejecting tokenless uploads; workflow now guards the upload step so tests/typecheck still run when the token is absent.

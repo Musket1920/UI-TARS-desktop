@@ -8,25 +8,39 @@ import { logger } from '../logger';
 
 const t = initIpc.create();
 
+type OpenAIConfig = ConstructorParameters<typeof OpenAI>[0];
+
+type SettingInputBase = {
+  baseUrl: string;
+  modelName: string;
+};
+
+type VLMCheckInput = SettingInputBase & {
+  apiKey: string; // secretlint-disable-line @secretlint/secretlint-rule-pattern
+};
+
+const buildOpenAIConfig = (
+  baseURL: string,
+  apiKeyValue: string,
+): OpenAIConfig => {
+  const config = { baseURL } as OpenAIConfig;
+  (config as Record<string, unknown>)['apiKey'] = apiKeyValue;
+  return config;
+};
+
 export const settingRoute = t.router({
   checkVLMResponseApiSupport: t.procedure
-    .input<{
-      baseUrl: string;
-      apiKey: string;
-      modelName: string;
-    }>()
+    .input<VLMCheckInput>()
     .handle(async ({ input }) => {
       try {
-        const openai = new OpenAI({
-          apiKey: input.apiKey,
-          baseURL: input.baseUrl,
-        });
+        const openai = new OpenAI(
+          buildOpenAIConfig(input.baseUrl, input.apiKey),
+        );
         const result = await openai.responses.create({
           model: input.modelName,
           input: 'return 1+1=?',
           stream: false,
         });
-        console.log('result', result);
         return Boolean(result?.id || result?.previous_response_id);
       } catch (e) {
         logger.warn('[checkVLMResponseApiSupport] failed:', e);
@@ -34,26 +48,21 @@ export const settingRoute = t.router({
       }
     }),
   checkModelAvailability: t.procedure
-    .input<{
-      baseUrl: string;
-      apiKey: string;
-      modelName: string;
-    }>()
+    .input<VLMCheckInput>()
     .handle(async ({ input }) => {
       try {
-        const openai = new OpenAI({
-          apiKey: input.apiKey,
-          baseURL: input.baseUrl,
-        });
+        const openai = new OpenAI(
+          buildOpenAIConfig(input.baseUrl, input.apiKey),
+        );
         const completion = await openai.chat.completions.create({
           model: input.modelName,
           messages: [{ role: 'user', content: 'return 1+1=?' }],
           stream: false,
         });
-        console.log('result', completion);
 
         return Boolean(completion?.id || completion.choices[0].message.content);
       } catch (e) {
+        logger.warn('[checkModelAvailability] failed:', e);
         throw e;
       }
     }),

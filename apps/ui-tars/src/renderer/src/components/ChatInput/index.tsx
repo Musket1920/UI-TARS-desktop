@@ -21,11 +21,16 @@ import { Button } from '@renderer/components/ui/button';
 import { api } from '@renderer/api';
 
 import { Play, Send, Square, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Textarea } from '@renderer/components/ui/textarea';
 import { useSession } from '@renderer/hooks/useSession';
 
 import { Operator } from '@main/store/types';
 import { useSetting } from '../../hooks/useSetting';
+import { executeChatInputRun } from './startRun';
+
+type RunRequestPhase = 'idle' | 'submitting';
+type RunStatus = 'idle' | 'thinking' | 'executing';
 
 const ChatInput = ({
   operator,
@@ -50,6 +55,8 @@ const ChatInput = ({
   const { settings, updateSetting } = useSetting();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const running = status === StatusEnum.RUNNING;
+  const [runRequestPhase, setRunRequestPhase] =
+    useState<RunRequestPhase>('idle');
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -64,24 +71,29 @@ const ChatInput = ({
   }, [status]);
 
   useEffect(() => {
+    let nextOperator = Operator.LocalComputer;
+
     switch (operator) {
       case Operator.RemoteComputer:
-        updateSetting({ ...settings, operator: Operator.RemoteComputer });
+        nextOperator = Operator.RemoteComputer;
         break;
       case Operator.RemoteBrowser:
-        updateSetting({ ...settings, operator: Operator.RemoteBrowser });
+        nextOperator = Operator.RemoteBrowser;
         break;
       case Operator.LocalComputer:
-        updateSetting({ ...settings, operator: Operator.LocalComputer });
+        nextOperator = Operator.LocalComputer;
         break;
       case Operator.LocalBrowser:
-        updateSetting({ ...settings, operator: Operator.LocalBrowser });
+        nextOperator = Operator.LocalBrowser;
         break;
       default:
-        updateSetting({ ...settings, operator: Operator.LocalComputer });
         break;
     }
-  }, [operator]);
+
+    if (settings.operator !== nextOperator) {
+      updateSetting({ ...settings, operator: nextOperator });
+    }
+  }, [operator, settings, updateSetting]);
 
   const getInstantInstructions = () => {
     if (localInstructions?.trim()) {
@@ -96,31 +108,29 @@ const ChatInput = ({
   // console.log('running', 'status', status, running);
 
   const startRun = async () => {
-    if (checkBeforeRun) {
-      const checked = await checkBeforeRun();
-
-      if (!checked) {
-        return;
-      }
-    }
-
-    const instructions = getInstantInstructions();
-
-    console.log('startRun', instructions, restUserData);
-
-    let history = chatMessages;
-
-    const session = await getSession(sessionId);
-    await updateSession(sessionId, {
-      name: instructions,
-      meta: {
-        ...session!.meta,
-        ...(restUserData || {}),
+    await executeChatInputRun({
+      checkBeforeRun,
+      setRunRequestPhase,
+      onError: (message) => {
+        toast.error(message);
       },
-    });
+      onRun: async () => {
+        const instructions = getInstantInstructions();
+        const history = chatMessages;
+        const session = await getSession(sessionId);
 
-    run(instructions, history, () => {
-      setLocalInstructions('');
+        await updateSession(sessionId, {
+          name: instructions,
+          meta: {
+            ...session!.meta,
+            ...(restUserData || {}),
+          },
+        });
+
+        await run(instructions, history, () => {
+          setLocalInstructions('');
+        });
+      },
     });
   };
 
@@ -143,6 +153,15 @@ const ChatInput = ({
   };
 
   const isCallUser = useMemo(() => status === StatusEnum.CALL_USER, [status]);
+  const runStatus: RunStatus = useMemo(() => {
+    if (runRequestPhase === 'submitting') {
+      return 'thinking';
+    }
+    if (running) {
+      return 'executing';
+    }
+    return 'idle';
+  }, [running, runRequestPhase]);
 
   const lastHumanMessage =
     [...(messages || [])]
@@ -161,6 +180,7 @@ const ChatInput = ({
     if (running) {
       return (
         <Button
+          data-testid="run-agent-btn"
           variant="secondary"
           size="icon"
           className="h-8 w-8"
@@ -177,6 +197,7 @@ const ChatInput = ({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                data-testid="run-agent-btn"
                 variant="secondary"
                 size="icon"
                 className="h-8 w-8 bg-pink-100 hover:bg-pink-200 text-pink-500 border-pink-200"
@@ -199,6 +220,7 @@ const ChatInput = ({
 
     return (
       <Button
+        data-testid="run-agent-btn"
         variant="secondary"
         size="icon"
         className="h-8 w-8"
@@ -216,6 +238,7 @@ const ChatInput = ({
         <div className="relative w-full">
           <Textarea
             ref={textareaRef}
+            data-testid="chat-input"
             placeholder={
               isCallUser && savedInstructions
                 ? `${savedInstructions}`
@@ -230,6 +253,12 @@ const ChatInput = ({
             onKeyDown={handleKeyDown}
           />
           <div className="absolute right-4 bottom-4 flex items-center gap-2">
+            <span
+              data-testid="run-status"
+              data-status={runStatus}
+              aria-hidden="true"
+              hidden
+            />
             {running && (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             )}

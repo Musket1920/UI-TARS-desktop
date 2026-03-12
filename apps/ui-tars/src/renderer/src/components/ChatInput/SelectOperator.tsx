@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Button } from '@renderer/components/ui/button';
 import {
   ChevronDown,
@@ -16,6 +16,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@renderer/components/ui/dropdown-menu';
 import { useSetting } from '@renderer/hooks/useSetting';
@@ -30,33 +31,57 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@renderer/components/ui/tooltip';
-import { Operator } from '@main/store/types';
+import { EngineMode, Operator } from '@main/store/types';
 
-const getOperatorIcon = (type: string) => {
+import { createAgentSStatusPoller } from './agentSStatusPolling';
+
+type AgentSHealth = Awaited<ReturnType<typeof api.getAgentSHealth>>;
+type AgentRuntimeStatus = Awaited<ReturnType<typeof api.getAgentRuntimeStatus>>;
+
+const getOperatorIcon = (type: Operator) => {
   switch (type) {
-    case 'nutjs':
+    case Operator.RemoteComputer:
+    case Operator.LocalComputer:
       return <Monitor className="h-4 w-4 mr-2" />;
-    case 'browser':
+    case Operator.RemoteBrowser:
+    case Operator.LocalBrowser:
       return <Globe className="h-4 w-4 mr-2" />;
     default:
       return <Monitor className="h-4 w-4 mr-2" />;
   }
 };
 
-const getOperatorLabel = (type: string) => {
+const getOperatorLabel = (type: Operator) => {
   switch (type) {
-    case 'nutjs':
+    case Operator.RemoteComputer:
+    case Operator.LocalComputer:
       return COMPUTER_OPERATOR;
-    case 'browser':
+    case Operator.RemoteBrowser:
+    case Operator.LocalBrowser:
       return BROWSER_OPERATOR;
     default:
       return COMPUTER_OPERATOR;
   }
 };
 
+const getEngineLabel = (engineMode?: EngineMode | null) => {
+  switch (engineMode) {
+    case EngineMode.AgentS:
+      return 'Agent-S';
+    case EngineMode.UITARS:
+    default:
+      return 'UI-TARS';
+  }
+};
+
 export const SelectOperator = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [health, setHealth] = useState<AgentSHealth | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<AgentRuntimeStatus | null>(
+    null,
+  );
+  const [loadingStatus, setLoadingStatus] = useState(false);
 
   const { settings, updateSetting } = useSetting();
   const { browserAvailable } = useStore();
@@ -67,6 +92,8 @@ export const SelectOperator = () => {
   const currentOperator = browserAvailable
     ? settings.operator || Operator.LocalComputer
     : Operator.LocalComputer;
+
+  const isAgentSSelected = settings.engineMode === EngineMode.AgentS;
 
   // If the current setting is browser but the browser
   // is not available, automatically switched to COMPUTER OPERATOR mode.
@@ -82,6 +109,41 @@ export const SelectOperator = () => {
     }
   }, [browserAvailable, settings, updateSetting]);
 
+  useEffect(() => {
+    const poller = createAgentSStatusPoller<AgentSHealth, AgentRuntimeStatus>({
+      isSelected: () => isAgentSSelected,
+      setLoadingStatus,
+      setStatus: ({ health: nextHealth, runtimeStatus: nextRuntimeStatus }) => {
+        setHealth(nextHealth);
+        setRuntimeStatus(nextRuntimeStatus);
+      },
+      fetchStatus: async () => {
+        const [healthPayload, runtimePayload] = await Promise.all([
+          api.getAgentSHealth({ forceProbe: false }),
+          api.getAgentRuntimeStatus(),
+        ]);
+
+        return {
+          health: healthPayload,
+          runtimeStatus: runtimePayload,
+        };
+      },
+      onPollError: (error) => {
+        console.error('Failed to poll Agent-S status', error);
+      },
+    });
+
+    void poller.poll();
+    const timer = setInterval(() => {
+      void poller.poll();
+    }, 15000);
+
+    return () => {
+      poller.stop();
+      clearInterval(timer);
+    };
+  }, [isAgentSSelected]);
+
   const handleSelect = (type: Operator) => {
     if (type === Operator.LocalBrowser && !browserAvailable) {
       return;
@@ -92,6 +154,22 @@ export const SelectOperator = () => {
       operator: type,
     });
   };
+
+  const operatorStatusLabel = useMemo(() => {
+    if (!health || !runtimeStatus) {
+      return null;
+    }
+    if (health.status === 'offline') {
+      return 'Agent-S offline; legacy path will be used.';
+    }
+    if (health.status === 'degraded') {
+      return 'Agent-S degraded; legacy fallback may apply.';
+    }
+    if (runtimeStatus.engine.runtime === 'legacy') {
+      return 'Legacy runtime active; Agent-S not running.';
+    }
+    return 'Agent-S healthy and active';
+  }, [health, runtimeStatus]);
 
   const handleRetryBrowserCheck = async () => {
     try {
@@ -129,6 +207,16 @@ export const SelectOperator = () => {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          <DropdownMenuLabel className="opacity-70 text-xs">
+            Engine: {getEngineLabel(settings.engineMode)}
+          </DropdownMenuLabel>
+          {isAgentSSelected && (
+            <DropdownMenuLabel className="opacity-70 text-xs">
+              {loadingStatus
+                ? 'Checking Agent-S status...'
+                : (operatorStatusLabel ?? 'Agent-S selected; awaiting status')}
+            </DropdownMenuLabel>
+          )}
           <DropdownMenuItem
             onClick={() => handleSelect(Operator.LocalComputer)}
           >
@@ -155,9 +243,13 @@ export const SelectOperator = () => {
             </DropdownMenuItem>
 
             {!browserAvailable && (
-              <div
+              <button
+                type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2"
                 onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                onKeyUp={(e) => e.stopPropagation()}
+                aria-label="Browser not detected info"
               >
                 <TooltipProvider>
                   <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
@@ -200,7 +292,7 @@ export const SelectOperator = () => {
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-              </div>
+              </button>
             )}
           </div>
         </DropdownMenuContent>

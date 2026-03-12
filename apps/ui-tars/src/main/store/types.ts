@@ -3,9 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { GUIAgentData, Message } from '@ui-tars/shared/types';
-
-import { LocalStore, PresetSource } from './validate';
 import { ConversationWithSoM } from '@main/shared/types';
+
+export enum EngineMode {
+  UITARS = 'ui-tars',
+  AgentS = 'agent-s',
+}
+
+export enum AgentSSidecarMode {
+  Embedded = 'embedded',
+  Remote = 'remote',
+}
 
 export type NextAction =
   | { type: 'key'; text: string }
@@ -32,6 +40,7 @@ export type AppState = {
   messages: ConversationWithSoM[];
   abortController: AbortController | null;
   thinking: boolean;
+  agentSPaused: boolean;
   browserAvailable: boolean;
 };
 
@@ -61,4 +70,4 @@ export enum Operator {
   LocalBrowser = 'Local Browser Operator',
 }
 
-export type { PresetSource, LocalStore };
+export type { PresetSource, LocalStore } from './validate';

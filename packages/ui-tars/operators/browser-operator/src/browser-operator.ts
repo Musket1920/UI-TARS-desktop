@@ -8,11 +8,11 @@ import { ConsoleLogger, Logger, defaultLogger } from '@agent-infra/logger';
 import { Operator, parseBoxToScreenCoords } from '@ui-tars/sdk/core';
 import {
   Page,
-  KeyInput,
   BrowserType,
   BrowserInterface,
   RemoteBrowser,
 } from '@agent-infra/browser';
+import type { KeyInput } from '@agent-infra/browser';
 import type {
   ScreenshotOutput,
   ExecuteParams,
@@ -383,12 +383,22 @@ export class BrowserOperator extends Operator {
 
   private async handleType(inputs: Record<string, any>) {
     const page = await this.getActivePage();
+    const rawContent = inputs.content;
 
-    const content = inputs.content?.trim();
-    if (!content) {
+    if (typeof rawContent !== 'string') {
       this.logger.warn('No content to type');
       return;
     }
+
+    if (rawContent === '') {
+      this.logger.info('Clearing selected content');
+      await page.keyboard.press('ControlOrMeta+A' as KeyInput);
+      await this.delay(50);
+      await page.keyboard.press('Backspace');
+      return;
+    }
+
+    const content = rawContent;
 
     this.logger.info('Typing content:', content);
     const stripContent = content.replace(/\\n$/, '').replace(/\n$/, '');
@@ -421,7 +431,7 @@ export class BrowserOperator extends Operator {
     this.logger.info(`Executing hotkey: ${keyStr}`);
 
     const keys = keyStr.split(/[\s+]/);
-    const normalizedKeys: KeyInput[] = keys.map((key: string) => {
+    const normalizedKeys = keys.map((key: string) => {
       const lowercaseKey = key.toLowerCase();
       const keyInput = KEY_MAPPINGS[lowercaseKey];
 
@@ -461,7 +471,7 @@ export class BrowserOperator extends Operator {
     this.logger.info(`Pressing key: ${keyStr}`);
 
     const keys = keyStr.split(/[\s+]/);
-    const normalizedKeys: KeyInput[] = keys.map((key: string) => {
+    const normalizedKeys = keys.map((key: string) => {
       const lowercaseKey = key.toLowerCase();
       const keyInput = KEY_MAPPINGS[lowercaseKey];
 
@@ -495,7 +505,7 @@ export class BrowserOperator extends Operator {
     this.logger.info(`Releasing key: ${keyStr}`);
 
     const keys = keyStr.split(/[\s+]/);
-    const normalizedKeys: KeyInput[] = keys.map((key: string) => {
+    const normalizedKeys = keys.map((key: string) => {
       const lowercaseKey = key.toLowerCase();
       const keyInput = KEY_MAPPINGS[lowercaseKey];
 

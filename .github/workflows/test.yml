@@ -12,6 +12,7 @@ on:
       - 'multimodal/**'
 
 permissions:
+# secretlint-disable-next-line @secretlint/secretlint-rule-pattern
   id-token: write
   contents: read
   attestations: read
@@ -59,9 +60,11 @@ jobs:
         run: npm exec turbo run coverage
       - name: Upload coverage data
         uses: codecov/codecov-action@13ce06bfc6bbe3ecf90edbbf1bc32fe5978ca1d3 # v5.3.1
+        if: ${{ secrets.CODECOV_TOKEN != '' }}
         with:
           fail_ci_if_error: true
           disable_search: true
           files: ./coverage/lcov.info
+          # secretlint-disable-next-line @secretlint/secretlint-rule-pattern
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: false

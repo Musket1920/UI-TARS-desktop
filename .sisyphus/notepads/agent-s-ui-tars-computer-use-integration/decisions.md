@@ -1,0 +1,1 @@
+- 2026-03-06: Embedded launcher validation reuses the existing `startup_failed` status path instead of introducing a new failure reason, so denied launchers remain typed and consistent with current sidecar startup handling.
