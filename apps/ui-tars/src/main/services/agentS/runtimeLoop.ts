@@ -30,6 +30,7 @@ import {
   agentSSidecarManager,
   classifyAgentSFailureReason,
   type SidecarFailureReason,
+  type SidecarStatus,
 } from './sidecarManager';
 import {
   parseSidecarPredictionPayload,
@@ -368,6 +369,18 @@ const runtimeError = (
   return new AgentSRuntimeError(payload, details);
 };
 
+const isUsableSidecarStatus = (
+  sidecarStatus: SidecarStatus,
+): sidecarStatus is SidecarStatus & { endpoint: string } => {
+  const treatTransientProbeFailureAsHealthy =
+    sidecarStatus.transientProbeFailure === true && !!sidecarStatus.endpoint;
+
+  return (
+    !!sidecarStatus.endpoint &&
+    (sidecarStatus.healthy || treatTransientProbeFailureAsHealthy)
+  );
+};
+
 const stringifyRuntimeError = (payload: AgentSRuntimeErrorPayload): string => {
   return JSON.stringify({
     source: 'agent_s.runtime',
@@ -625,12 +638,7 @@ export const runAgentSRuntimeLoop = async (
     });
 
     const sidecarStatus = await deps.sidecarManager.health({ probe: true });
-    const treatTransientProbeFailureAsHealthy =
-      sidecarStatus.transientProbeFailure === true && !!sidecarStatus.endpoint;
-    if (
-      (!sidecarStatus.healthy && !treatTransientProbeFailureAsHealthy) ||
-      !sidecarStatus.endpoint
-    ) {
+    if (!isUsableSidecarStatus(sidecarStatus)) {
       throw runtimeError(
         {
           code: 'AGENT_S_SIDECAR_UNHEALTHY',
@@ -737,20 +745,23 @@ export const runAgentSRuntimeLoop = async (
       });
 
       const currentSidecarStatus = deps.sidecarManager.getStatus();
-      if (!currentSidecarStatus.healthy || !currentSidecarStatus.endpoint) {
+      const liveSidecarStatus = isUsableSidecarStatus(currentSidecarStatus)
+        ? currentSidecarStatus
+        : await deps.sidecarManager.health({ probe: true });
+      if (!isUsableSidecarStatus(liveSidecarStatus)) {
         throw runtimeError(
           {
             code: 'AGENT_S_SIDECAR_UNHEALTHY',
             message: 'Agent-S sidecar is unhealthy or endpoint is unavailable',
             step,
-            sidecarReason: currentSidecarStatus.reason,
+            sidecarReason: liveSidecarStatus.reason,
           },
-          currentSidecarStatus,
+          liveSidecarStatus,
         );
       }
 
       const prediction = await requestSidecarPrediction(deps, {
-        endpoint: currentSidecarStatus.endpoint,
+        endpoint: liveSidecarStatus.endpoint,
         instruction: args.instruction,
         screenshot,
         screenWidth: width,

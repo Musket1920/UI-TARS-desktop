@@ -470,6 +470,86 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(isAgentSActive()).toBe(false);
   });
 
+  it('continues in-loop when cached heartbeat status is unhealthy but a live probe only reports a transient failure', async () => {
+    const { setState, getState, history } = createStateHandlers();
+    const operator = createOperator();
+    const healthyStatus: SidecarStatus = {
+      state: 'running',
+      mode: 'embedded',
+      healthy: true,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 4242,
+      checkedAt: 1_000,
+      lastHeartbeatAt: 1_000,
+    };
+    const cachedHeartbeatFailureStatus: SidecarStatus = {
+      state: 'unhealthy',
+      mode: 'embedded',
+      healthy: false,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 4242,
+      checkedAt: 1_100,
+      lastHeartbeatAt: 1_000,
+      reason: 'heartbeat_failed',
+    };
+    const transientProbeFailureStatus: SidecarStatus = {
+      ...cachedHeartbeatFailureStatus,
+      transientProbeFailure: true,
+      reason: 'health_http_error',
+    };
+    const sidecarManager = {
+      health: vi
+        .fn<() => Promise<SidecarStatus>>()
+        .mockResolvedValueOnce({ ...healthyStatus })
+        .mockResolvedValueOnce({ ...transientProbeFailureStatus }),
+      getStatus: vi.fn(() => ({ ...cachedHeartbeatFailureStatus })),
+    };
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(createPredictResponse('finished'));
+
+    translateAgentSActionMock.mockReturnValue({
+      ok: true,
+      normalizedAction: 'finished',
+      parsed: {
+        action_type: 'finished',
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    });
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction:
+        'ignore cached heartbeat failure after a transient probe miss',
+      sessionHistoryMessages: [],
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.END);
+    expect(result.error).toBeUndefined();
+    expect(result.stepsExecuted).toBe(1);
+    expect(sidecarManager.health).toHaveBeenCalledTimes(2);
+    expect(sidecarManager.health).toHaveBeenNthCalledWith(1, { probe: true });
+    expect(sidecarManager.health).toHaveBeenNthCalledWith(2, { probe: true });
+    expect(sidecarManager.getStatus).toHaveBeenCalledTimes(1);
+    expect(predictFetch).toHaveBeenCalledTimes(1);
+    expect(operator.execute).toHaveBeenCalledTimes(1);
+    expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
+      false,
+    );
+    expect(history.some((state) => state.status === StatusEnum.END)).toBe(true);
+    expect(isAgentSActive()).toBe(false);
+  });
+
   it('uses the latest live sidecar endpoint for each predict turn', async () => {
     const { setState, getState } = createStateHandlers();
     const operator: AgentSRuntimeOperator = {
@@ -557,7 +637,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(sidecarManager.getStatus).toHaveBeenCalledTimes(2);
   });
 
-  it('fails cleanly when the live sidecar endpoint disappears between turns', async () => {
+  it('fails cleanly when a live sidecar probe confirms the endpoint is gone between turns', async () => {
     const { setState, getState, history } = createStateHandlers();
     const operator: AgentSRuntimeOperator = {
       screenshot: vi
@@ -586,9 +666,38 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
         reason: 'stop_requested',
       },
     ];
+    const probedStatuses: SidecarStatus[] = [
+      {
+        state: 'running',
+        mode: 'embedded',
+        healthy: true,
+        endpoint: 'http://127.0.0.1:10800',
+        pid: 4242,
+        checkedAt: 1_000,
+        lastHeartbeatAt: 1_000,
+      },
+      {
+        state: 'stopped',
+        mode: 'embedded',
+        healthy: false,
+        endpoint: null,
+        pid: null,
+        checkedAt: 1_100,
+        lastHeartbeatAt: null,
+        reason: 'stop_requested',
+      },
+    ];
     let liveStatusIndex = 0;
+    let probedStatusIndex = 0;
     const sidecarManager = {
-      health: vi.fn(async () => ({ ...liveStatuses[0] })),
+      health: vi.fn(async () => {
+        const status =
+          probedStatuses[
+            Math.min(probedStatusIndex, probedStatuses.length - 1)
+          ];
+        probedStatusIndex += 1;
+        return { ...status };
+      }),
       getStatus: vi.fn(() => {
         const status =
           liveStatuses[Math.min(liveStatusIndex, liveStatuses.length - 1)];
@@ -629,6 +738,7 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
     expect(result.error?.code).toBe('AGENT_S_SIDECAR_UNHEALTHY');
     expect(result.error?.step).toBe(2);
     expect(result.error?.sidecarReason).toBe('stop_requested');
+    expect(sidecarManager.health).toHaveBeenCalledTimes(2);
     expect(predictFetch).toHaveBeenCalledTimes(1);
     expect(operator.execute).toHaveBeenCalledTimes(1);
     expect(history.some((state) => state.status === StatusEnum.ERROR)).toBe(
