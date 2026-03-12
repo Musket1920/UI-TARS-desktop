@@ -10,7 +10,14 @@ import {
   AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
   AGENT_S_SAFE_MAX_TURN_TIMEOUT_MS,
 } from './safetyPolicy';
-import { AgentSSidecarMode, EngineMode, LocalStore, Operator } from './types';
+import {
+  AgentSSidecarMode,
+  EngineMode,
+  LocalStore,
+  Operator,
+  VLMConnectionMode,
+  VLMProviderV2,
+} from './types';
 
 const {
   electronStoreSetMock,
@@ -81,9 +88,12 @@ vi.mock('electron-store', () => ({
 
 const createSettings = (overrides: Partial<LocalStore> = {}): LocalStore => ({
   language: 'en',
+  vlmConnectionMode: VLMConnectionMode.Managed,
+  vlmProvider: VLMProviderV2.ui_tars_1_5,
   vlmBaseUrl: 'https://vlm.example.com',
   vlmApiKey: 'key',
   vlmModelName: 'model',
+  useResponsesApi: false,
   operator: Operator.LocalComputer,
   engineMode: EngineMode.UITARS,
   agentSSidecarMode: AgentSSidecarMode.Embedded,
@@ -124,6 +134,17 @@ describe('SettingStore', () => {
     expect(browserWindowSendMock).not.toHaveBeenCalled();
   });
 
+  it('persists managed defaults for manual localhost-capable settings', async () => {
+    const { DEFAULT_SETTING } = await import('./setting');
+
+    expect(DEFAULT_SETTING.vlmConnectionMode).toBe(VLMConnectionMode.Managed);
+    expect(DEFAULT_SETTING.vlmProvider).toBe('');
+    expect(DEFAULT_SETTING.vlmBaseUrl).toBe('');
+    expect(DEFAULT_SETTING.vlmApiKey).toBe('');
+    expect(DEFAULT_SETTING.vlmModelName).toBe('');
+    expect(DEFAULT_SETTING.useResponsesApi).toBe(false);
+  });
+
   it('rewrites unsafe persisted Agent-S loop intervals to the dedicated safe floor', async () => {
     const { SettingStore } = await import('./setting');
 
@@ -145,5 +166,24 @@ describe('SettingStore', () => {
       }),
     );
     expect(browserWindowSendMock).not.toHaveBeenCalled();
+  });
+
+  it('hydrates imported presets back into managed settings', async () => {
+    const { SettingStore } = await import('./setting');
+
+    const settings = await SettingStore.importPresetFromText(`
+vlmBaseUrl: https://vlm.example.com
+vlmApiKey: preset-key
+vlmModelName: preset-model
+vlmProvider: ${VLMProviderV2.ui_tars_1_5}
+useResponsesApi: true
+operator: ${Operator.LocalComputer}
+`);
+
+    expect(settings.vlmConnectionMode).toBe(VLMConnectionMode.Managed);
+    expect(settings.vlmProvider).toBe(VLMProviderV2.ui_tars_1_5);
+    expect(settings.vlmApiKey).toBe('preset-key');
+    expect(settings.vlmModelName).toBe('preset-model');
+    expect(settings.useResponsesApi).toBe(true);
   });
 });

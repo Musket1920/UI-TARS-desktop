@@ -11,7 +11,9 @@ import { sanitizeAgentSPayload } from '@main/services/agentS/telemetry';
 
 import {
   LocalStore,
+  PresetStore,
   SearchEngineForSettings,
+  VLMConnectionMode,
   VLMProviderV2,
   Operator,
   EngineMode,
@@ -23,6 +25,7 @@ import { enforceAgentSSafetyPolicy } from './safetyPolicy';
 
 export const DEFAULT_SETTING: LocalStore = {
   language: 'en',
+  vlmConnectionMode: VLMConnectionMode.Managed,
   vlmProvider: (env.vlmProvider as VLMProviderV2) || '',
   vlmBaseUrl: env.vlmBaseUrl || '',
   vlmApiKey: env.vlmApiKey || '',
@@ -37,6 +40,15 @@ export const DEFAULT_SETTING: LocalStore = {
   agentSEnableLocalEnv: false,
   reportStorageBaseUrl: '',
   utioBaseUrl: '',
+};
+
+const hydratePresetAsManagedSettings = (preset: PresetStore): LocalStore => {
+  return {
+    ...DEFAULT_SETTING,
+    ...preset,
+    vlmConnectionMode: VLMConnectionMode.Managed,
+    useResponsesApi: preset.useResponsesApi ?? DEFAULT_SETTING.useResponsesApi,
+  };
 };
 
 export class SettingStore {
@@ -164,9 +176,10 @@ export class SettingStore {
       const yamlText = await response.text();
       const preset = yaml.load(yamlText);
       const validatedPreset = validatePreset(preset);
+      const managedSettings = hydratePresetAsManagedSettings(validatedPreset);
 
       SettingStore.setStore({
-        ...enforceAgentSSafetyPolicy(validatedPreset),
+        ...enforceAgentSSafetyPolicy(managedSettings),
         presetSource: {
           type: 'remote',
           url,
@@ -209,5 +222,7 @@ export class SettingStore {
 async function parsePresetYaml(yamlContent: string): Promise<LocalStore> {
   const preset = yaml.load(yamlContent);
   const validatedPreset = validatePreset(preset);
-  return enforceAgentSSafetyPolicy(validatedPreset);
+  return enforceAgentSSafetyPolicy(
+    hydratePresetAsManagedSettings(validatedPreset),
+  );
 }

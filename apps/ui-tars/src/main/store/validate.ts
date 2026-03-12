@@ -13,6 +13,7 @@ import {
 import {
   SearchEngineForSettings,
   VLMProviderV2,
+  VLMConnectionMode,
   Operator,
   EngineMode,
   AgentSSidecarMode,
@@ -25,14 +26,7 @@ const PresetSourceSchema = z.object({
   lastUpdated: z.number().optional(),
 });
 
-export const PresetSchema = z.object({
-  // Local VLM Settings
-  vlmProvider: z.nativeEnum(VLMProviderV2).optional(),
-  vlmBaseUrl: z.string().url(),
-  vlmApiKey: z.string().min(1),
-  vlmModelName: z.string().min(1),
-  useResponsesApi: z.boolean().optional(),
-
+const CommonSettingsSchema = z.object({
   // Chat Settings
   operator: z.nativeEnum(Operator),
   language: z.enum(['zh', 'en']).optional(),
@@ -58,12 +52,88 @@ export const PresetSchema = z.object({
   // Report Settings
   reportStorageBaseUrl: z.string().url().optional(),
   utioBaseUrl: z.string().url().optional(),
+});
+
+const ManagedVLMSettingsSchema = z.object({
+  vlmProvider: z.nativeEnum(VLMProviderV2).optional(),
+  vlmBaseUrl: z.string().url(),
+  vlmApiKey: z.string().min(1),
+  vlmModelName: z.string().min(1),
+  useResponsesApi: z.boolean().optional(),
+});
+
+const LocalStoreVLMSettingsSchema = z.object({
+  vlmProvider: z.nativeEnum(VLMProviderV2).optional(),
+  vlmBaseUrl: z.string().url(),
+  vlmApiKey: z.string().default(''),
+  vlmModelName: z.string().min(1),
+  useResponsesApi: z.boolean().default(false),
+});
+
+const usesManagedVLMConnectionMode = (mode: VLMConnectionMode): boolean => {
+  return mode === VLMConnectionMode.Managed;
+};
+
+const usesLegacyUITARSEngineMode = (engineMode?: EngineMode): boolean => {
+  return (engineMode ?? EngineMode.UITARS) === EngineMode.UITARS;
+};
+
+const usesSupportedLocalhostOpenAICompatibleSettings = (
+  engineMode: EngineMode | undefined,
+  operator: Operator,
+): boolean => {
+  return (
+    usesLegacyUITARSEngineMode(engineMode) &&
+    (operator === Operator.LocalComputer || operator === Operator.LocalBrowser)
+  );
+};
+
+export const PresetSchema = CommonSettingsSchema.extend({
+  ...ManagedVLMSettingsSchema.shape,
   presetSource: PresetSourceSchema.optional(),
 });
 
-export type PresetSource = z.infer<typeof PresetSourceSchema>;
-export type LocalStore = z.infer<typeof PresetSchema>;
+export const LocalStoreSchema = CommonSettingsSchema.extend({
+  vlmConnectionMode: z
+    .nativeEnum(VLMConnectionMode)
+    .default(VLMConnectionMode.Managed),
+  ...LocalStoreVLMSettingsSchema.shape,
+  presetSource: PresetSourceSchema.optional(),
+}).superRefine((data, ctx) => {
+  if (usesManagedVLMConnectionMode(data.vlmConnectionMode) && data.vlmApiKey.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.too_small,
+      minimum: 1,
+      inclusive: true,
+      path: ['vlmApiKey'],
+      type: 'string',
+    });
+  }
 
-export const validatePreset = (data: unknown): LocalStore => {
+  if (
+    data.vlmConnectionMode === VLMConnectionMode.LocalhostOpenAICompatible &&
+    !usesSupportedLocalhostOpenAICompatibleSettings(
+      data.engineMode,
+      data.operator,
+    )
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['vlmConnectionMode'],
+      message:
+        '`localhost-openai-compatible` is only supported for legacy UI-TARS local operators',
+    });
+  }
+});
+
+export type PresetSource = z.infer<typeof PresetSourceSchema>;
+export type PresetStore = z.infer<typeof PresetSchema>;
+export type LocalStore = z.infer<typeof LocalStoreSchema>;
+
+export const validatePreset = (data: unknown): PresetStore => {
   return PresetSchema.parse(data);
+};
+
+export const validateLocalStore = (data: unknown): LocalStore => {
+  return LocalStoreSchema.parse(data);
 };

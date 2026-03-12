@@ -57,6 +57,11 @@ export enum VLMProviderV2 {
   doubao_1_5_vl = 'VolcEngine Ark for Doubao-1.5-thinking-vision-pro',
 }
 
+export enum VLMConnectionMode {
+  Managed = 'managed',
+  LocalhostOpenAICompatible = 'localhost-openai-compatible',
+}
+
 export enum SearchEngineForSettings {
   GOOGLE = 'google',
   BAIDU = 'baidu',
@@ -70,4 +75,4 @@ export enum Operator {
   LocalBrowser = 'Local Browser Operator',
 }
 
-export type { PresetSource, LocalStore } from './validate';
+export type { PresetSource, PresetStore, LocalStore } from './validate';

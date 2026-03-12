@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { validatePreset } from './validate';
+import { validateLocalStore, validatePreset } from './validate';
 import {
   AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
   AGENT_S_SAFE_MIN_LOOP_INTERVAL_MS,
@@ -15,6 +15,7 @@ import {
   EngineMode,
   Operator,
   SearchEngineForSettings,
+  VLMConnectionMode,
   VLMProviderV2,
 } from './types';
 
@@ -25,6 +26,11 @@ const basePreset = () => ({
   vlmProvider: VLMProviderV2.ui_tars_1_5,
   operator: Operator.LocalComputer,
   searchEngineForBrowser: SearchEngineForSettings.GOOGLE,
+});
+
+const baseLocalStore = () => ({
+  ...basePreset(),
+  vlmConnectionMode: VLMConnectionMode.Managed,
 });
 
 describe('validatePreset schema for Agent-S settings', () => {
@@ -132,4 +138,75 @@ describe('validatePreset schema for Agent-S settings', () => {
       }),
     ).toThrow(/agentSSidecarPort/);
   });
+});
+
+describe('validateLocalStore schema for localhost connection mode', () => {
+  it('accepts localhost mode with an empty API key and persisted responses capability', () => {
+    const validated = validateLocalStore({
+      ...baseLocalStore(),
+      vlmConnectionMode: VLMConnectionMode.LocalhostOpenAICompatible,
+      vlmBaseUrl: 'http://127.0.0.1:11434/v1',
+      vlmApiKey: '',
+      vlmModelName: 'ui-tars-1.5-7b',
+      useResponsesApi: true,
+    });
+
+    expect(validated.vlmConnectionMode).toBe(
+      VLMConnectionMode.LocalhostOpenAICompatible,
+    );
+    expect(validated.vlmApiKey).toBe('');
+    expect(validated.vlmModelName).toBe('ui-tars-1.5-7b');
+    expect(validated.useResponsesApi).toBe(true);
+  });
+
+  it('defaults managed mode and the persisted responses capability flag', () => {
+    const validated = validateLocalStore({
+      operator: Operator.LocalComputer,
+      vlmBaseUrl: 'https://vlm.example.com',
+      vlmApiKey: 'test-api-key',
+      vlmModelName: 'test-model',
+    });
+
+    expect(validated.vlmConnectionMode).toBe(VLMConnectionMode.Managed);
+    expect(validated.useResponsesApi).toBe(false);
+  });
+
+  it('rejects managed mode when the API key is blank', () => {
+    expect(() =>
+      validateLocalStore({
+        ...baseLocalStore(),
+        vlmApiKey: '',
+      }),
+    ).toThrow(/vlmApiKey/);
+  });
+
+  it('rejects localhost mode when Agent-S is selected', () => {
+    expect(() =>
+      validateLocalStore({
+        ...baseLocalStore(),
+        engineMode: EngineMode.AgentS,
+        vlmConnectionMode: VLMConnectionMode.LocalhostOpenAICompatible,
+        vlmBaseUrl: 'http://127.0.0.1:11434/v1',
+        vlmApiKey: '',
+        vlmModelName: 'ui-tars-1.5-7b',
+      }),
+    ).toThrow(/legacy UI-TARS local operators/);
+  });
+
+  it.each([Operator.RemoteComputer, Operator.RemoteBrowser])(
+    'rejects localhost mode for unsupported operator %s',
+    (operator) => {
+      expect(() =>
+        validateLocalStore({
+          ...baseLocalStore(),
+          engineMode: EngineMode.UITARS,
+          operator,
+          vlmConnectionMode: VLMConnectionMode.LocalhostOpenAICompatible,
+          vlmBaseUrl: 'http://127.0.0.1:11434/v1',
+          vlmApiKey: '',
+          vlmModelName: 'ui-tars-1.5-7b',
+        }),
+      ).toThrow(/legacy UI-TARS local operators/);
+    },
+  );
 });
