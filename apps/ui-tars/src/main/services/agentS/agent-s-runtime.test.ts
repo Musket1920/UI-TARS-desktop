@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { StatusEnum } from '@ui-tars/shared/types';
+import { IMAGE_PLACEHOLDER } from '@ui-tars/shared/constants';
+import { StatusEnum, type Message } from '@ui-tars/shared/types';
 import { VLMProviderV2 } from '@main/store/types';
 import type { AppState, LocalStore } from '@main/store/types';
 import { runAgentSRuntimeLoop } from './runtimeLoop';
@@ -635,6 +636,87 @@ describe('agent-s-runtime runAgentSRuntimeLoop', () => {
       'http://127.0.0.1:10900/predict',
     ]);
     expect(sidecarManager.getStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends accumulated current-run history to later predict turns', async () => {
+    const { setState, getState } = createStateHandlers();
+    const operator: AgentSRuntimeOperator = {
+      screenshot: vi
+        .fn()
+        .mockResolvedValue({ base64: TINY_PNG_BASE64, scaleFactor: 1 }),
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce({ status: StatusEnum.RUNNING })
+        .mockResolvedValueOnce({ status: StatusEnum.END }),
+    };
+    const sidecarManager = createFakeSidecarManager();
+    const initialHistory: Message[] = [
+      { from: 'human', value: 'earlier turn' },
+    ];
+    const requestedSessionHistory: Message[][] = [];
+    const predictFetch = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(async (_input, init) => {
+        if (typeof init?.body !== 'string') {
+          throw new Error('expected predict request body string');
+        }
+
+        requestedSessionHistory.push(
+          JSON.parse(init.body).sessionHistoryMessages as Message[],
+        );
+
+        return createPredictResponse('wait', 'keep going');
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        if (typeof init?.body !== 'string') {
+          throw new Error('expected predict request body string');
+        }
+
+        requestedSessionHistory.push(
+          JSON.parse(init.body).sessionHistoryMessages as Message[],
+        );
+
+        return createPredictResponse('finished');
+      });
+
+    translateAgentSActionMock.mockImplementation((action: string) => ({
+      ok: true,
+      normalizedAction: action,
+      parsed: {
+        action_type: action,
+        action_inputs: {},
+        thought: '',
+        reflection: null,
+      },
+    }));
+
+    const result = await runAgentSRuntimeLoop({
+      setState,
+      getState,
+      settings: createSettings(),
+      operator,
+      instruction: 'reuse current run history on later turns',
+      sessionHistoryMessages: initialHistory,
+      deps: {
+        fetch: predictFetch,
+        sidecarManager,
+        now: () => 1_234,
+      },
+    });
+
+    expect(result.status).toBe(StatusEnum.END);
+    expect(result.stepsExecuted).toBe(2);
+    expect(requestedSessionHistory).toEqual([
+      initialHistory,
+      [
+        ...initialHistory,
+        { from: 'human', value: IMAGE_PLACEHOLDER },
+        { from: 'gpt', value: 'keep going' },
+      ],
+    ]);
+    expect(requestedSessionHistory[1]).toHaveLength(
+      requestedSessionHistory[0].length + 2,
+    );
   });
 
   it('fails cleanly when a live sidecar probe confirms the endpoint is gone between turns', async () => {

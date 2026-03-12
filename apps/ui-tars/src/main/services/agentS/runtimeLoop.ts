@@ -416,6 +416,15 @@ const appendState = (
   });
 };
 
+const appendSessionHistoryMessages = (
+  sessionHistoryMessages: Message[],
+  messages: Message[],
+) => {
+  sessionHistoryMessages.push(
+    ...messages.map(({ from, value }) => ({ from, value })),
+  );
+};
+
 const resolveStatusFromAction = (
   action: string,
   executeOutput: ExecuteOutput | undefined,
@@ -661,6 +670,8 @@ export const runAgentSRuntimeLoop = async (
       }),
     });
 
+    const sessionHistoryMessages = [...args.sessionHistoryMessages];
+
     for (let step = 1; step <= maxSteps; step += 1) {
       await ensureAgentSNotPaused(args.getState().abortController?.signal);
 
@@ -768,7 +779,7 @@ export const runAgentSRuntimeLoop = async (
         screenHeight: height,
         turnTimeoutMs,
         providerConfig,
-        sessionHistoryMessages: args.sessionHistoryMessages,
+        sessionHistoryMessages,
         step,
         abortSignal: args.getState().abortController?.signal,
         correlation: args.correlation
@@ -833,6 +844,11 @@ export const runAgentSRuntimeLoop = async (
         status: StatusEnum.RUNNING,
         conversations: [modelConversation],
       });
+
+      appendSessionHistoryMessages(sessionHistoryMessages, [
+        screenshotConversation,
+        modelConversation,
+      ]);
 
       const executeOutput = await raceTurnOperation(deps, {
         operation: args.operator
