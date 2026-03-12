@@ -16,6 +16,10 @@ import pkg from './package.json';
 import { getExternalPkgs } from './scripts/getExternalPkgs';
 import tailwindcss from '@tailwindcss/vite';
 
+const protectedBytecodeStrings = process.env.UI_TARS_APP_PRIVATE_KEY_BASE64
+  ? [process.env.UI_TARS_APP_PRIVATE_KEY_BASE64]
+  : [];
+
 export default defineConfig({
   main: {
     define: {
@@ -42,7 +46,7 @@ export default defineConfig({
     plugins: [
       bytecodePlugin({
         chunkAlias: 'app_private',
-        protectedStrings: [process.env.UI_TARS_APP_PRIVATE_KEY_BASE64!],
+        protectedStrings: protectedBytecodeStrings,
       }),
       tsconfigPaths(),
       externalizeDepsPlugin({
