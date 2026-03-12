@@ -138,16 +138,6 @@ const isUsableAgentSSidecarStatus = (
   );
 };
 
-const usesLegacyUITARSLocalOperator = (
-  engineMode: EngineMode | undefined,
-  operator: Operator,
-): boolean => {
-  return (
-    (engineMode ?? EngineMode.UITARS) === EngineMode.UITARS &&
-    (operator === Operator.LocalComputer || operator === Operator.LocalBrowser)
-  );
-};
-
 export const runAgent = async (
   setState: (state: AppState) => void,
   getState: () => AppState,
@@ -500,11 +490,6 @@ export const runAgent = async (
       });
     }
 
-    const useLocalhostLegacyUITarsConfig =
-      settings.vlmConnectionMode ===
-        VLMConnectionMode.LocalhostOpenAICompatible &&
-      usesLegacyUITARSLocalOperator(settings.engineMode, settings.operator);
-
     // Legacy fallback path: neither Agent-S runtime was attempted nor succeeded
     let modelVersion = getModelVersion(settings.vlmProvider);
     let modelConfig: UITarsModelConfig = {
@@ -514,15 +499,6 @@ export const runAgent = async (
       useResponsesApi: settings.useResponsesApi,
     };
     let modelAuthHdrs: Record<string, string> = {};
-
-    if (useLocalhostLegacyUITarsConfig) {
-      modelConfig = {
-        baseURL: settings.vlmBaseUrl,
-        apiKey: settings.vlmApiKey, // secretlint-disable-line @secretlint/secretlint-rule-pattern -- config field name, value comes from settings
-        model: settings.vlmModelName,
-        useResponsesApi: settings.useResponsesApi,
-      };
-    }
 
     if (
       settings.operator === Operator.RemoteComputer ||
