@@ -22,7 +22,12 @@ import {
 } from '@ui-tars/operator-browser';
 import { showPredictionMarker } from '@main/window/ScreenMarker';
 import { SettingStore } from '@main/store/setting';
-import { AppState, EngineMode, Operator } from '@main/store/types';
+import {
+  AppState,
+  EngineMode,
+  Operator,
+  VLMConnectionMode,
+} from '@main/store/types';
 import { GUIAgentManager } from '../ipcRoutes/agent';
 import { checkBrowserAvailability } from './browserCheck';
 import {
@@ -130,6 +135,16 @@ const isUsableAgentSSidecarStatus = (
   return (
     !!sidecarHealthStatus?.endpoint &&
     (!!sidecarHealthStatus.healthy || treatTransientProbeFailureAsHealthy)
+  );
+};
+
+const usesLegacyUITARSLocalOperator = (
+  engineMode: EngineMode | undefined,
+  operator: Operator,
+): boolean => {
+  return (
+    (engineMode ?? EngineMode.UITARS) === EngineMode.UITARS &&
+    (operator === Operator.LocalComputer || operator === Operator.LocalBrowser)
   );
 };
 
@@ -314,6 +329,17 @@ export const runAgent = async (
   };
 
   try {
+    const usesUnsupportedAgentSLocalhostMode =
+      settings.vlmConnectionMode ===
+        VLMConnectionMode.LocalhostOpenAICompatible &&
+      settings.engineMode === EngineMode.AgentS;
+
+    if (usesUnsupportedAgentSLocalhostMode) {
+      throw new Error(
+        '`localhost-openai-compatible` is only supported for legacy UI-TARS local operators',
+      );
+    }
+
     const initializedOperator = await initializeOperator();
     if (!initializedOperator) {
       return;
@@ -474,6 +500,11 @@ export const runAgent = async (
       });
     }
 
+    const useLocalhostLegacyUITarsConfig =
+      settings.vlmConnectionMode ===
+        VLMConnectionMode.LocalhostOpenAICompatible &&
+      usesLegacyUITARSLocalOperator(settings.engineMode, settings.operator);
+
     // Legacy fallback path: neither Agent-S runtime was attempted nor succeeded
     let modelVersion = getModelVersion(settings.vlmProvider);
     let modelConfig: UITarsModelConfig = {
@@ -483,6 +514,15 @@ export const runAgent = async (
       useResponsesApi: settings.useResponsesApi,
     };
     let modelAuthHdrs: Record<string, string> = {};
+
+    if (useLocalhostLegacyUITarsConfig) {
+      modelConfig = {
+        baseURL: settings.vlmBaseUrl,
+        apiKey: settings.vlmApiKey, // secretlint-disable-line @secretlint/secretlint-rule-pattern -- config field name, value comes from settings
+        model: settings.vlmModelName,
+        useResponsesApi: settings.useResponsesApi,
+      };
+    }
 
     if (
       settings.operator === Operator.RemoteComputer ||
