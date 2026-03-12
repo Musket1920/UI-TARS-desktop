@@ -11,6 +11,12 @@ const t = initIpc.create();
 
 type OpenAIConfig = ConstructorParameters<typeof OpenAI>[0];
 
+const PROBE_TIMEOUT_MS = 1_500;
+const PROBE_REQUEST_OPTIONS = {
+  maxRetries: 0,
+  timeout: PROBE_TIMEOUT_MS,
+} as const;
+
 type SettingInputBase = {
   baseUrl: string;
   modelName: string;
@@ -62,11 +68,18 @@ const MODEL_NOT_FOUND_HINTS = [
 
 const RESPONSES_UNSUPPORTED_HINTS = [
   '/responses',
+  'post /responses',
   'response api',
-  'responses',
+  'responses api',
+  'responses endpoint',
+] as const;
+
+const RESPONSES_UNSUPPORTED_REASON_HINTS = [
   'not implemented',
   'unsupported',
   'unknown endpoint',
+  'not found',
+  'does not support',
 ] as const;
 
 const buildOpenAIConfig = (
@@ -80,6 +93,34 @@ const buildOpenAIConfig = (
 
 const getOpenAIClient = (input: VLMCheckInput): OpenAI => {
   return new OpenAI(buildOpenAIConfig(input.baseUrl, input.apiKey));
+};
+
+const createProbeTimeoutError = (probeName: string): Error => {
+  return new Error(
+    `Localhost ${probeName} probe timed out after ${PROBE_TIMEOUT_MS}ms.`,
+  );
+};
+
+const withProbeTimeout = async <T>(
+  probeName: string,
+  operation: Promise<T>,
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(createProbeTimeoutError(probeName));
+        }, PROBE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
 };
 
 const isValidHttpUrl = (value: string): boolean => {
@@ -155,6 +196,17 @@ const hasHint = (error: unknown, hints: readonly string[]): boolean => {
   });
 };
 
+const hasResponsesUnsupportedHint = (error: unknown): boolean => {
+  const details = collectErrorDetails(error);
+
+  return details.some((detail) => {
+    return (
+      RESPONSES_UNSUPPORTED_HINTS.some((hint) => detail.includes(hint)) &&
+      RESPONSES_UNSUPPORTED_REASON_HINTS.some((hint) => detail.includes(hint))
+    );
+  });
+};
+
 const classifyModelProbeError = (
   error: unknown,
 ): LocalVLMConnectionErrorCode => {
@@ -180,7 +232,7 @@ const classifyResponsesProbeError = (
     return 'UNREACHABLE';
   }
 
-  if (hasHint(error, RESPONSES_UNSUPPORTED_HINTS)) {
+  if (hasResponsesUnsupportedHint(error)) {
     return 'RESPONSES_UNSUPPORTED';
   }
 
@@ -192,30 +244,30 @@ const classifyResponsesProbeError = (
   return 'UNKNOWN';
 };
 
-const buildConnectionTestResult = (
-  result: LocalVLMConnectionTestResult,
-): LocalVLMConnectionTestResult => {
-  return result;
-};
-
 const probeModelAvailability = async (input: VLMCheckInput): Promise<boolean> => {
   const openai = getOpenAIClient(input);
-  const completion = await openai.chat.completions.create({
-    model: input.modelName,
-    messages: [{ role: 'user', content: 'return 1+1=?' }],
-    stream: false,
-  });
+  const completion = await openai.chat.completions.create(
+    {
+      model: input.modelName,
+      messages: [{ role: 'user', content: 'return 1+1=?' }],
+      stream: false,
+    },
+    PROBE_REQUEST_OPTIONS,
+  );
 
   return Boolean(completion?.id || completion.choices[0].message.content);
 };
 
 const probeResponsesApiSupport = async (input: VLMCheckInput): Promise<boolean> => {
   const openai = getOpenAIClient(input);
-  const result = await openai.responses.create({
-    model: input.modelName,
-    input: 'return 1+1=?',
-    stream: false,
-  });
+  const result = await openai.responses.create(
+    {
+      model: input.modelName,
+      input: 'return 1+1=?',
+      stream: false,
+    },
+    PROBE_REQUEST_OPTIONS,
+  );
 
   return Boolean(result?.id || result?.previous_response_id);
 };
@@ -245,80 +297,86 @@ export const settingRoute = t.router({
     .input<VLMCheckInput>()
     .handle(async ({ input }) => {
       if (!isValidHttpUrl(input.baseUrl)) {
-        return buildConnectionTestResult({
+        return {
           ok: false,
           modelAvailable: false,
           useResponsesApi: false,
           errorCode: 'INVALID_URL',
           errorMessage: 'Invalid base URL. Use a full http(s) URL.',
-        });
+        } satisfies LocalVLMConnectionTestResult;
       }
 
       try {
-        const modelAvailable = await probeModelAvailability(input);
+        const modelAvailable = await withProbeTimeout(
+          'model availability',
+          probeModelAvailability(input),
+        );
         if (!modelAvailable) {
-          return buildConnectionTestResult({
+          return {
             ok: false,
             modelAvailable: false,
             useResponsesApi: false,
             errorCode: 'UNKNOWN',
             errorMessage: 'Model availability probe returned an empty response.',
-          });
+          } satisfies LocalVLMConnectionTestResult;
         }
       } catch (error) {
         logger.warn('[testLocalVLMConnection] model probe failed:', error);
-        return buildConnectionTestResult({
+        return {
           ok: false,
           modelAvailable: false,
           useResponsesApi: false,
           errorCode: classifyModelProbeError(error),
           errorMessage: getErrorMessage(error),
-        });
+        } satisfies LocalVLMConnectionTestResult;
       }
 
       try {
-        const useResponsesApi = await probeResponsesApiSupport(input);
+        const useResponsesApi = await withProbeTimeout(
+          'responses API',
+          probeResponsesApiSupport(input),
+        );
         SettingStore.set('useResponsesApi', useResponsesApi);
 
         if (!useResponsesApi) {
-          return buildConnectionTestResult({
+          return {
             ok: false,
             modelAvailable: true,
             useResponsesApi: false,
             errorCode: 'UNKNOWN',
             errorMessage: 'Responses API probe returned an empty response.',
-          });
+          } satisfies LocalVLMConnectionTestResult;
         }
 
-        return buildConnectionTestResult({
+        return {
           ok: true,
           modelAvailable: true,
           useResponsesApi: true,
           errorCode: null,
           errorMessage: null,
-        });
+        } satisfies LocalVLMConnectionTestResult;
       } catch (error) {
         logger.warn('[testLocalVLMConnection] responses probe failed:', error);
         const errorCode = classifyResponsesProbeError(error);
 
         if (errorCode === 'RESPONSES_UNSUPPORTED') {
           SettingStore.set('useResponsesApi', false);
-          return buildConnectionTestResult({
+          return {
             ok: true,
             modelAvailable: true,
             useResponsesApi: false,
             errorCode,
             errorMessage: getErrorMessage(error),
-          });
+          } satisfies LocalVLMConnectionTestResult;
         }
 
-        return buildConnectionTestResult({
+        return {
           ok: false,
           modelAvailable: true,
           useResponsesApi: false,
           errorCode,
           errorMessage: getErrorMessage(error),
-        });
+        } satisfies LocalVLMConnectionTestResult;
       }
     }),
 });

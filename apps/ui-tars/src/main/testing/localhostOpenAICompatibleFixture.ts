@@ -3,11 +3,13 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http';
-import { createServer as createNetServer } from 'node:net';
+import { createServer as createNetServer, type Socket } from 'node:net';
 
 export type LocalhostOpenAICompatibleFixtureState =
   | 'chat-success'
   | 'responses-supported'
+  | 'responses-generic-error'
+  | 'responses-timeout'
   | 'responses-unsupported'
   | 'unreachable-host'
   | 'invalid-model'
@@ -21,7 +23,7 @@ export interface LocalhostOpenAICompatibleFixtureRequest {
 
 export interface LocalhostOpenAICompatibleFixtureInput {
   baseUrl: string;
-  apiKey: string;
+  apiKey: string; // secretlint-disable-line @secretlint/secretlint-rule-pattern -- fixture contract field name only
   modelName: string;
 }
 
@@ -97,6 +99,26 @@ const writeResponsesUnsupported = (
   });
 };
 
+const closeNetServer = async (
+  server: ReturnType<typeof createNetServer>,
+  sockets: Set<Socket>,
+): Promise<void> => {
+  for (const socket of sockets) {
+    socket.destroy();
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+};
+
 const writeChatSuccess = (
   response: ServerResponse,
   modelName: string,
@@ -168,6 +190,19 @@ const createLocalhostOpenAICompatibleServer = (
           return;
         }
 
+        if (state === 'responses-generic-error') {
+          writeResponsesUnsupported(
+            response,
+            'Generic backend error: responses remain unsupported for this deployment',
+            500,
+          );
+          return;
+        }
+
+        if (state === 'responses-timeout') {
+          return;
+        }
+
         if (state === 'malformed-payload') {
           writeMalformedJson(response);
           return;
@@ -206,54 +241,54 @@ const createLocalhostOpenAICompatibleServer = (
   });
 };
 
-const reserveUnusedPort = async (): Promise<number> => {
-  return await new Promise<number>((resolve, reject) => {
-    const portServer = createNetServer();
-
-    portServer.once('error', reject);
-    portServer.listen(0, LOCALHOST_HOST, () => {
-      const address = portServer.address();
-
-      if (address === null || typeof address === 'string') {
-        portServer.close(() => {
-          reject(new Error('Could not determine fixture port'));
-        });
-        return;
-      }
-
-      const { port } = address;
-      portServer.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(port);
-      });
-    });
-  });
-};
-
 export const createLocalhostOpenAICompatibleFixture = async (
   state: LocalhostOpenAICompatibleFixtureState,
   options: LocalhostOpenAICompatibleFixtureOptions = {},
 ): Promise<LocalhostOpenAICompatibleFixture> => {
-  const apiKey = options.apiKey ?? DEFAULT_API_KEY;
+  const apiKey = options.apiKey ?? DEFAULT_API_KEY; // secretlint-disable-line @secretlint/secretlint-rule-pattern -- fixture-only placeholder value
   const modelName = options.modelName ?? DEFAULT_MODEL_NAME;
   const requests: LocalhostOpenAICompatibleFixtureRequest[] = [];
 
   if (state === 'unreachable-host') {
-    const port = await reserveUnusedPort();
+    const sockets = new Set<Socket>();
+    const server = createNetServer((socket) => {
+      sockets.add(socket);
+      socket.on('close', () => {
+        sockets.delete(socket);
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, LOCALHOST_HOST, () => {
+        resolve();
+      });
+    });
+
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+      await closeNetServer(server, sockets);
+      throw new Error('Could not determine localhost fixture address');
+    }
+
+    let closed = false;
 
     return {
       state,
       input: {
-        baseUrl: `http://${LOCALHOST_HOST}:${port}/v1`,
+        baseUrl: `http://${LOCALHOST_HOST}:${address.port}/v1`,
         apiKey,
         modelName,
       },
       requests,
-      close: async () => undefined,
+      close: async () => {
+        if (closed) {
+          return;
+        }
+
+        closed = true;
+        await closeNetServer(server, sockets);
+      },
     };
   }
 
@@ -287,6 +322,7 @@ export const createLocalhostOpenAICompatibleFixture = async (
       }
 
       closed = true;
+      server.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {

@@ -150,7 +150,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
-  it('classifies unreachable hosts from the chat-completions probe', async () => {
+  it('classifies hanging hosts from the chat-completions probe as unreachable', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
       input: await createFixture('unreachable-host'),
       context: {} as SettingRouteContext,
@@ -161,7 +161,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
       modelAvailable: false,
       useResponsesApi: false,
       errorCode: 'UNREACHABLE',
-      errorMessage: 'Connection error.',
+      errorMessage: expect.stringMatching(/timed out|timeout/i),
     });
     expect(getFixturePaths()).toEqual([]);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
@@ -207,6 +207,48 @@ describe('settingRoute.testLocalVLMConnection', () => {
     ]);
     expect(settingStoreSetMock).toHaveBeenCalledTimes(1);
     expect(settingStoreSetMock).toHaveBeenCalledWith('useResponsesApi', false);
+  });
+
+  it('does not treat generic responses and unsupported text as /responses unsupported', async () => {
+    const result = await settingRoute.testLocalVLMConnection.handle({
+      input: await createFixture('responses-generic-error'),
+      context: {} as SettingRouteContext,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      modelAvailable: true,
+      useResponsesApi: false,
+      errorCode: 'UNKNOWN',
+      errorMessage: expect.stringContaining(
+        'Generic backend error: responses remain unsupported for this deployment',
+      ),
+    });
+    expect(getFixturePaths()).toEqual([
+      '/v1/chat/completions',
+      '/v1/responses',
+    ]);
+    expect(settingStoreSetMock).not.toHaveBeenCalled();
+  });
+
+  it('classifies hanging /responses probes as unreachable', async () => {
+    const result = await settingRoute.testLocalVLMConnection.handle({
+      input: await createFixture('responses-timeout'),
+      context: {} as SettingRouteContext,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      modelAvailable: true,
+      useResponsesApi: false,
+      errorCode: 'UNREACHABLE',
+      errorMessage: expect.stringMatching(/timed out|timeout/i),
+    });
+    expect(getFixturePaths()).toEqual([
+      '/v1/chat/completions',
+      '/v1/responses',
+    ]);
+    expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
   it('falls back to UNKNOWN for malformed localhost payloads without persisting', async () => {
