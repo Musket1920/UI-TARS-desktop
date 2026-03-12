@@ -5,6 +5,7 @@
 import { OpenAI } from 'openai';
 import { initIpc } from '@ui-tars/electron-ipc/main';
 import { logger } from '../logger';
+import { SettingStore } from '../store/setting';
 
 const t = initIpc.create();
 
@@ -19,6 +20,55 @@ type VLMCheckInput = SettingInputBase & {
   apiKey: string; // secretlint-disable-line @secretlint/secretlint-rule-pattern
 };
 
+type LocalVLMConnectionErrorCode =
+  | 'INVALID_URL'
+  | 'UNREACHABLE'
+  | 'MODEL_NOT_FOUND'
+  | 'RESPONSES_UNSUPPORTED'
+  | 'UNKNOWN';
+
+type LocalVLMConnectionTestResult = {
+  ok: boolean;
+  modelAvailable: boolean;
+  useResponsesApi: boolean;
+  errorCode: LocalVLMConnectionErrorCode | null;
+  errorMessage: string | null;
+};
+
+type OpenAIErrorRecord = Record<string, unknown>;
+
+const CONNECTION_ERROR_HINTS = [
+  'apiconnectionerror',
+  'connect',
+  'connection',
+  'econnrefused',
+  'ehostunreach',
+  'enotfound',
+  'fetch failed',
+  'network',
+  'refused',
+  'socket',
+  'timed out',
+  'timeout',
+  'unreachable',
+] as const;
+
+const MODEL_NOT_FOUND_HINTS = [
+  'model_not_found',
+  'model not found',
+  'no such model',
+  'does not exist',
+] as const;
+
+const RESPONSES_UNSUPPORTED_HINTS = [
+  '/responses',
+  'response api',
+  'responses',
+  'not implemented',
+  'unsupported',
+  'unknown endpoint',
+] as const;
+
 const buildOpenAIConfig = (
   baseURL: string,
   apiKeyValue: string,
@@ -28,20 +78,154 @@ const buildOpenAIConfig = (
   return config;
 };
 
+const getOpenAIClient = (input: VLMCheckInput): OpenAI => {
+  return new OpenAI(buildOpenAIConfig(input.baseUrl, input.apiKey));
+};
+
+const isValidHttpUrl = (value: string): boolean => {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const getErrorRecord = (value: unknown): OpenAIErrorRecord | null => {
+  return typeof value === 'object' && value !== null
+    ? (value as OpenAIErrorRecord)
+    : null;
+};
+
+const pushStringDetails = (details: string[], value: unknown): void => {
+  if (typeof value === 'string' && value.length > 0) {
+    details.push(value.toLowerCase());
+  }
+};
+
+const collectErrorDetails = (error: unknown): string[] => {
+  const details: string[] = [];
+  const record = getErrorRecord(error);
+  const nestedError = getErrorRecord(record?.error);
+  const cause = getErrorRecord(record?.cause);
+
+  pushStringDetails(details, record?.name);
+  pushStringDetails(details, record?.message);
+  pushStringDetails(details, record?.code);
+  pushStringDetails(details, nestedError?.message);
+  pushStringDetails(details, nestedError?.code);
+  pushStringDetails(details, nestedError?.type);
+  pushStringDetails(details, cause?.message);
+  pushStringDetails(details, cause?.code);
+  pushStringDetails(details, cause?.name);
+
+  return details;
+};
+
+const getErrorStatus = (error: unknown): number | undefined => {
+  const record = getErrorRecord(error);
+  return typeof record?.status === 'number' ? record.status : undefined;
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+
+  const record = getErrorRecord(error);
+  if (typeof record?.message === 'string' && record.message.length > 0) {
+    return record.message;
+  }
+
+  const nestedError = getErrorRecord(record?.error);
+  if (
+    typeof nestedError?.message === 'string' &&
+    nestedError.message.length > 0
+  ) {
+    return nestedError.message;
+  }
+
+  return 'Unknown error';
+};
+
+const hasHint = (error: unknown, hints: readonly string[]): boolean => {
+  const details = collectErrorDetails(error);
+  return details.some((detail) => {
+    return hints.some((hint) => detail.includes(hint));
+  });
+};
+
+const classifyModelProbeError = (
+  error: unknown,
+): LocalVLMConnectionErrorCode => {
+  if (hasHint(error, CONNECTION_ERROR_HINTS)) {
+    return 'UNREACHABLE';
+  }
+
+  if (hasHint(error, MODEL_NOT_FOUND_HINTS)) {
+    return 'MODEL_NOT_FOUND';
+  }
+
+  if (getErrorStatus(error) === 404) {
+    return 'MODEL_NOT_FOUND';
+  }
+
+  return 'UNKNOWN';
+};
+
+const classifyResponsesProbeError = (
+  error: unknown,
+): LocalVLMConnectionErrorCode => {
+  if (hasHint(error, CONNECTION_ERROR_HINTS)) {
+    return 'UNREACHABLE';
+  }
+
+  if (hasHint(error, RESPONSES_UNSUPPORTED_HINTS)) {
+    return 'RESPONSES_UNSUPPORTED';
+  }
+
+  const status = getErrorStatus(error);
+  if (status === 404 || status === 405 || status === 501) {
+    return 'RESPONSES_UNSUPPORTED';
+  }
+
+  return 'UNKNOWN';
+};
+
+const buildConnectionTestResult = (
+  result: LocalVLMConnectionTestResult,
+): LocalVLMConnectionTestResult => {
+  return result;
+};
+
+const probeModelAvailability = async (input: VLMCheckInput): Promise<boolean> => {
+  const openai = getOpenAIClient(input);
+  const completion = await openai.chat.completions.create({
+    model: input.modelName,
+    messages: [{ role: 'user', content: 'return 1+1=?' }],
+    stream: false,
+  });
+
+  return Boolean(completion?.id || completion.choices[0].message.content);
+};
+
+const probeResponsesApiSupport = async (input: VLMCheckInput): Promise<boolean> => {
+  const openai = getOpenAIClient(input);
+  const result = await openai.responses.create({
+    model: input.modelName,
+    input: 'return 1+1=?',
+    stream: false,
+  });
+
+  return Boolean(result?.id || result?.previous_response_id);
+};
+
 export const settingRoute = t.router({
   checkVLMResponseApiSupport: t.procedure
     .input<VLMCheckInput>()
     .handle(async ({ input }) => {
       try {
-        const openai = new OpenAI(
-          buildOpenAIConfig(input.baseUrl, input.apiKey),
-        );
-        const result = await openai.responses.create({
-          model: input.modelName,
-          input: 'return 1+1=?',
-          stream: false,
-        });
-        return Boolean(result?.id || result?.previous_response_id);
+        return await probeResponsesApiSupport(input);
       } catch (e) {
         logger.warn('[checkVLMResponseApiSupport] failed:', e);
         return false;
@@ -51,19 +235,90 @@ export const settingRoute = t.router({
     .input<VLMCheckInput>()
     .handle(async ({ input }) => {
       try {
-        const openai = new OpenAI(
-          buildOpenAIConfig(input.baseUrl, input.apiKey),
-        );
-        const completion = await openai.chat.completions.create({
-          model: input.modelName,
-          messages: [{ role: 'user', content: 'return 1+1=?' }],
-          stream: false,
-        });
-
-        return Boolean(completion?.id || completion.choices[0].message.content);
+        return await probeModelAvailability(input);
       } catch (e) {
         logger.warn('[checkModelAvailability] failed:', e);
         throw e;
+      }
+    }),
+  testLocalVLMConnection: t.procedure
+    .input<VLMCheckInput>()
+    .handle(async ({ input }) => {
+      if (!isValidHttpUrl(input.baseUrl)) {
+        return buildConnectionTestResult({
+          ok: false,
+          modelAvailable: false,
+          useResponsesApi: false,
+          errorCode: 'INVALID_URL',
+          errorMessage: 'Invalid base URL. Use a full http(s) URL.',
+        });
+      }
+
+      try {
+        const modelAvailable = await probeModelAvailability(input);
+        if (!modelAvailable) {
+          return buildConnectionTestResult({
+            ok: false,
+            modelAvailable: false,
+            useResponsesApi: false,
+            errorCode: 'UNKNOWN',
+            errorMessage: 'Model availability probe returned an empty response.',
+          });
+        }
+      } catch (error) {
+        logger.warn('[testLocalVLMConnection] model probe failed:', error);
+        return buildConnectionTestResult({
+          ok: false,
+          modelAvailable: false,
+          useResponsesApi: false,
+          errorCode: classifyModelProbeError(error),
+          errorMessage: getErrorMessage(error),
+        });
+      }
+
+      try {
+        const useResponsesApi = await probeResponsesApiSupport(input);
+        SettingStore.set('useResponsesApi', useResponsesApi);
+
+        if (!useResponsesApi) {
+          return buildConnectionTestResult({
+            ok: false,
+            modelAvailable: true,
+            useResponsesApi: false,
+            errorCode: 'UNKNOWN',
+            errorMessage: 'Responses API probe returned an empty response.',
+          });
+        }
+
+        return buildConnectionTestResult({
+          ok: true,
+          modelAvailable: true,
+          useResponsesApi: true,
+          errorCode: null,
+          errorMessage: null,
+        });
+      } catch (error) {
+        logger.warn('[testLocalVLMConnection] responses probe failed:', error);
+        const errorCode = classifyResponsesProbeError(error);
+
+        if (errorCode === 'RESPONSES_UNSUPPORTED') {
+          SettingStore.set('useResponsesApi', false);
+          return buildConnectionTestResult({
+            ok: true,
+            modelAvailable: true,
+            useResponsesApi: false,
+            errorCode,
+            errorMessage: getErrorMessage(error),
+          });
+        }
+
+        return buildConnectionTestResult({
+          ok: false,
+          modelAvailable: true,
+          useResponsesApi: false,
+          errorCode,
+          errorMessage: getErrorMessage(error),
+        });
       }
     }),
 });
