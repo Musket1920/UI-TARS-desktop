@@ -5,7 +5,6 @@
 import { GUIAgentData, Message } from '@ui-tars/shared/types';
 import { ConversationWithSoM } from '@main/shared/types';
 
-import { LocalStore, PresetSource } from './validate';
 export enum EngineMode {
   UITARS = 'ui-tars',
   AgentS = 'agent-s',
@@ -71,4 +70,4 @@ export enum Operator {
   LocalBrowser = 'Local Browser Operator',
 }
 
-export type { PresetSource, LocalStore };
+export type { PresetSource, LocalStore } from './validate';
