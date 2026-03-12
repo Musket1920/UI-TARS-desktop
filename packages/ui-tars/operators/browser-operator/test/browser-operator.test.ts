@@ -2,7 +2,6 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import os from 'os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLogger = vi.hoisted(() => ({
@@ -69,25 +68,35 @@ describe('BrowserOperator handleType', () => {
     vi.clearAllMocks();
   });
 
-  it('releases the select-all modifier if KeyA throws while clearing exact empty-string content', async () => {
+  it('clears exact empty-string content with the built-in select-all shortcut before Backspace', async () => {
     const page = createPage();
     const operator = createOperator(page);
-    const expectedModifier = os.platform() === 'darwin' ? 'Meta' : 'Control';
-    const keyAError = new Error('KeyA failed');
 
-    page.keyboard.press.mockRejectedValueOnce(keyAError);
+    await (operator as any).handleType({ content: '' });
+
+    expect(page.keyboard.press).toHaveBeenCalledTimes(2);
+    expect(page.keyboard.press).toHaveBeenNthCalledWith(1, 'ControlOrMeta+A');
+    expect(page.keyboard.press).toHaveBeenNthCalledWith(2, 'Backspace');
+    expect(page.keyboard.down).not.toHaveBeenCalled();
+    expect(page.keyboard.up).not.toHaveBeenCalled();
+    expect(page.keyboard.type).not.toHaveBeenCalled();
+  });
+
+  it('aborts before Backspace if the select-all shortcut fails while clearing exact empty-string content', async () => {
+    const page = createPage();
+    const operator = createOperator(page);
+    const selectAllError = new Error('Select all failed');
+
+    page.keyboard.press.mockRejectedValueOnce(selectAllError);
 
     await expect((operator as any).handleType({ content: '' })).rejects.toThrow(
-      keyAError,
+      selectAllError,
     );
 
-    expect(page.keyboard.down).toHaveBeenCalledWith(expectedModifier);
     expect(page.keyboard.press).toHaveBeenCalledTimes(1);
-    expect(page.keyboard.press).toHaveBeenCalledWith('KeyA');
-    expect(page.keyboard.up).toHaveBeenCalledWith(expectedModifier);
-    expect(page.keyboard.up.mock.invocationCallOrder[0]).toBeGreaterThan(
-      page.keyboard.press.mock.invocationCallOrder[0],
-    );
+    expect(page.keyboard.press).toHaveBeenCalledWith('ControlOrMeta+A');
+    expect(page.keyboard.down).not.toHaveBeenCalled();
+    expect(page.keyboard.up).not.toHaveBeenCalled();
     expect(page.keyboard.press).not.toHaveBeenCalledWith('Backspace');
     expect(page.keyboard.type).not.toHaveBeenCalled();
   });
