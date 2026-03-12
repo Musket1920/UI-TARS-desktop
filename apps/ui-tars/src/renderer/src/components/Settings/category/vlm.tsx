@@ -50,20 +50,17 @@ import {
   AlertTitle,
 } from '@renderer/components/ui/alert';
 import { cn } from '@renderer/utils';
+import {
+  areLocalConnectionSnapshotsEqual,
+  getLocalConnectionFeedback,
+  isValidHttpUrl,
+  LOCALHOST_BASE_URL_HINT,
+  LocalConnectionTestState,
+  normalizeLocalConnectionSnapshot,
+} from '@renderer/components/Settings/localhost';
 
 import { PresetImport, PresetBanner } from './preset';
 import { api } from '@renderer/api';
-
-const LOCALHOST_BASE_URL_HINT = 'http://127.0.0.1:11434/v1';
-
-const isValidHttpUrl = (value: string): boolean => {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-};
 
 const formSchema = z.object({
   vlmConnectionMode: z.nativeEnum(VLMConnectionMode),
@@ -96,22 +93,6 @@ const formSchema = z.object({
 
 type VLMSettingsFormValues = z.infer<typeof formSchema>;
 
-type LocalConnectionSnapshot = {
-  baseUrl: string;
-  apiKey: string;
-  modelName: string;
-};
-
-type LocalConnectionTestResult = Awaited<
-  ReturnType<typeof api.testLocalVLMConnection>
->;
-
-type LocalConnectionTestState = {
-  status: 'idle' | 'testing' | 'completed';
-  snapshot: LocalConnectionSnapshot | null;
-  result: LocalConnectionTestResult | null;
-};
-
 const buildFormValuesFromSettings = (
   settings: ReturnType<typeof useSetting>['settings'],
 ): VLMSettingsFormValues => {
@@ -136,31 +117,6 @@ const normalizeFormValues = (
   };
 };
 
-const normalizeLocalConnectionSnapshot = (
-  values: Pick<VLMSettingsFormValues, 'vlmBaseUrl' | 'vlmApiKey' | 'vlmModelName'>,
-): LocalConnectionSnapshot => {
-  return {
-    baseUrl: values.vlmBaseUrl.trim(),
-    apiKey: values.vlmApiKey.trim(),
-    modelName: values.vlmModelName.trim(),
-  };
-};
-
-const areLocalConnectionSnapshotsEqual = (
-  left: LocalConnectionSnapshot | null,
-  right: LocalConnectionSnapshot,
-): boolean => {
-  if (!left) {
-    return false;
-  }
-
-  return (
-    left.baseUrl === right.baseUrl &&
-    left.apiKey === right.apiKey &&
-    left.modelName === right.modelName
-  );
-};
-
 const areFormValuesEqual = (
   left: VLMSettingsFormValues,
   right: VLMSettingsFormValues,
@@ -172,59 +128,6 @@ const areFormValuesEqual = (
     left.vlmApiKey === right.vlmApiKey &&
     left.vlmModelName === right.vlmModelName
   );
-};
-
-const getLocalConnectionFeedback = (
-  result: LocalConnectionTestResult,
-): {
-  tone: 'success' | 'error' | 'warning';
-  title: string;
-  description: string;
-} => {
-  switch (result.errorCode) {
-    case 'INVALID_URL':
-      return {
-        tone: 'error',
-        title: 'Invalid localhost URL',
-        description: `Use a full http(s) URL, for example ${LOCALHOST_BASE_URL_HINT}.`,
-      };
-    case 'UNREACHABLE':
-      return {
-        tone: 'error',
-        title: 'Cannot reach the localhost server',
-        description:
-          'Make sure the server is running, then verify the full base URL and port.',
-      };
-    case 'MODEL_NOT_FOUND':
-      return {
-        tone: 'error',
-        title: 'Model not found',
-        description:
-          'The local server responded, but this model name is not available there.',
-      };
-    case 'RESPONSES_UNSUPPORTED':
-      return {
-        tone: 'warning',
-        title: 'Connected to localhost',
-        description:
-          'The model works, but the Responses API is unavailable. UI-TARS will use chat completions for this connection.',
-      };
-    case 'UNKNOWN':
-      return {
-        tone: 'error',
-        title: 'Connection test failed',
-        description:
-          result.errorMessage ??
-          'The localhost server returned an unexpected response.',
-      };
-    default:
-      return {
-        tone: 'success',
-        title: 'Connected to localhost',
-        description:
-          'The model responded successfully and the Responses API is available.',
-      };
-  }
 };
 
 export interface VLMSettingsRef {

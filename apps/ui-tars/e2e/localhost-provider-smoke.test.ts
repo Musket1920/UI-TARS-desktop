@@ -204,7 +204,7 @@ const openLocalComputerSettings = async (page: Page) => {
 };
 
 test('@localhost-provider smoke localhost settings gate persists success and rejects unreachable hosts', async () => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
 
   const unreachableFixture = await createLocalhostOpenAICompatibleFixture(
     'unreachable-host',
@@ -224,24 +224,33 @@ test('@localhost-provider smoke localhost settings gate persists success and rej
 
     await openLocalComputerSettings(page);
     await selectLocalhostMode(page);
+    const testConnectionButton = page.getByTestId('test-connection');
+
     await fillLocalhostSettings(page, unreachableFixture);
-    await page.getByTestId('test-connection').click({ force: true });
+    await testConnectionButton.click({ force: true });
+    await expect(testConnectionButton).toContainText('Testing connection...');
+    await expect(testConnectionButton).toContainText('Test connection', {
+      timeout: 90_000,
+    });
 
     await expect(
       page.getByText('Cannot reach the localhost server'),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 30_000 });
     await expect(
       page.getByText(
-        'Cannot reach this localhost endpoint. Verify the server is running and the URL is correct.',
+        'Make sure the server is running, then verify the full base URL and port.',
       ),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Request timed out.')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByRole('button', { name: 'Get Start' })).toBeDisabled();
 
     const persistedAfterFailure = await getPersistedSettings(page);
     expect(persistedAfterFailure).toEqual(initialSettings);
 
     await fillLocalhostSettings(page, supportedFixture);
-    await page.getByTestId('test-connection').click({ force: true });
+    await testConnectionButton.click({ force: true });
 
     await expect(page.getByText('Connected to localhost')).toBeVisible();
     await expect(
@@ -282,15 +291,27 @@ test('@localhost-provider smoke localhost settings gate persists success and rej
 
     await chatInput.fill('localhost provider smoke run');
     await expect(runButton).toBeEnabled();
-    await invokeRendererChannel(page, 'runAgent');
-    await expect(runStatus).toHaveAttribute('data-status', 'idle');
+    await runButton.click();
+
+    await expect
+      .poll(async () => {
+        const smokeState = await invokeRendererChannel<SmokeHarnessState>(
+          page,
+          'localhost-provider:getSmokeState',
+        );
+
+        return smokeState.runInvocationCount;
+      })
+      .toBe(1);
+    await expect(runStatus).toHaveAttribute('data-status', 'idle', {
+      timeout: 30_000,
+    });
 
     const smokeState = await invokeRendererChannel<SmokeHarnessState>(
       page,
       'localhost-provider:getSmokeState',
     );
 
-    expect(smokeState.runInvocationCount).toBe(1);
     expect(smokeState.capturedSettings).toMatchObject({
       operator: LOCAL_COMPUTER_OPERATOR,
       useResponsesApi: true,

@@ -50,6 +50,14 @@ import {
   AlertDescription,
   AlertTitle,
 } from '@renderer/components/ui/alert';
+import {
+  areLocalConnectionSnapshotsEqual,
+  getLocalConnectionFeedback,
+  isValidHttpUrl,
+  LOCALHOST_BASE_URL_HINT,
+  LocalConnectionTestState,
+  normalizeLocalConnectionSnapshot,
+} from '@renderer/components/Settings/localhost';
 
 import { PresetImport } from './PresetImport';
 import { Tabs, TabsList, TabsTrigger } from '@renderer/components/ui/tabs';
@@ -59,17 +67,6 @@ import googleIcon from '@resources/icons/google-color.svg?url';
 import bingIcon from '@resources/icons/bing-color.svg?url';
 import baiduIcon from '@resources/icons/baidu-color.svg?url';
 import { REPO_OWNER, REPO_NAME } from '@main/shared/constants';
-
-const LOCALHOST_BASE_URL_HINT = 'http://127.0.0.1:11434/v1';
-
-const isValidHttpUrl = (value: string): boolean => {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-};
 
 const formSchema = z.object({
   language: z.enum(['en', 'zh']),
@@ -108,22 +105,6 @@ const formSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof formSchema>;
 
-type LocalConnectionSnapshot = {
-  baseUrl: string;
-  apiKey: string;
-  modelName: string;
-};
-
-type LocalConnectionTestResult = Awaited<
-  ReturnType<typeof api.testLocalVLMConnection>
->;
-
-type LocalConnectionTestState = {
-  status: 'idle' | 'testing' | 'completed';
-  snapshot: LocalConnectionSnapshot | null;
-  result: LocalConnectionTestResult | null;
-};
-
 const buildFormValuesFromSettings = (
   settings: ReturnType<typeof useSetting>['settings'],
 ): SettingsFormValues => {
@@ -142,87 +123,6 @@ const buildFormValuesFromSettings = (
     reportStorageBaseUrl: settings.reportStorageBaseUrl ?? '',
     utioBaseUrl: settings.utioBaseUrl ?? '',
   };
-};
-
-const normalizeLocalConnectionSnapshot = (
-  values: Pick<
-    SettingsFormValues,
-    'vlmBaseUrl' | 'vlmApiKey' | 'vlmModelName'
-  >,
-): LocalConnectionSnapshot => {
-  return {
-    baseUrl: values.vlmBaseUrl.trim(),
-    apiKey: values.vlmApiKey.trim(),
-    modelName: values.vlmModelName.trim(),
-  };
-};
-
-const areConnectionSnapshotsEqual = (
-  left: LocalConnectionSnapshot | null,
-  right: LocalConnectionSnapshot,
-): boolean => {
-  if (!left) {
-    return false;
-  }
-
-  return (
-    left.baseUrl === right.baseUrl &&
-    left.apiKey === right.apiKey &&
-    left.modelName === right.modelName
-  );
-};
-
-const getLocalConnectionFeedback = (
-  result: LocalConnectionTestResult,
-): {
-  tone: 'success' | 'error' | 'warning';
-  title: string;
-  description: string;
-} => {
-  switch (result.errorCode) {
-    case 'INVALID_URL':
-      return {
-        tone: 'error',
-        title: 'Invalid localhost URL',
-        description: `Use a full http(s) URL, for example ${LOCALHOST_BASE_URL_HINT}.`,
-      };
-    case 'UNREACHABLE':
-      return {
-        tone: 'error',
-        title: 'Cannot reach the localhost server',
-        description:
-          'Make sure the server is running, then verify the full base URL and port.',
-      };
-    case 'MODEL_NOT_FOUND':
-      return {
-        tone: 'error',
-        title: 'Model not found',
-        description:
-          'The local server responded, but this model name is not available there.',
-      };
-    case 'RESPONSES_UNSUPPORTED':
-      return {
-        tone: 'warning',
-        title: 'Connected to localhost',
-        description:
-          'The model works, but the Responses API is unavailable. UI-TARS will use chat completions for this connection.',
-      };
-    case 'UNKNOWN':
-      return {
-        tone: 'error',
-        title: 'Connection test failed',
-        description:
-          result.errorMessage ??
-          'The localhost server returned an unexpected response.',
-      };
-    default:
-      return {
-        tone: 'success',
-        title: 'Connected to localhost',
-        description:
-          'The model responded successfully and the Responses API is available.',
-      };
-  }
 };
 
 const SECTIONS = {
@@ -256,7 +156,6 @@ export default function Settings() {
     setUpdateLoading(true);
     try {
       const detail = await api.checkForUpdatesDetail();
-      console.log('detail', detail);
 
       if (detail.updateInfo) {
         setUpdateDetail({
@@ -284,8 +183,6 @@ export default function Settings() {
   const isRemoteAutoUpdatedPreset =
     settings?.presetSource?.type === 'remote' &&
     settings.presetSource.autoUpdate;
-
-  console.log('initialValues', settings);
 
   const hasLoadedSettings = Object.keys(settings).length > 0;
   const settingsFormValues = useMemo(() => {
@@ -367,7 +264,7 @@ export default function Settings() {
 
   const isLocalhostMode =
     vlmConnectionMode === VLMConnectionMode.LocalhostOpenAICompatible;
-  const isCurrentLocalConnectionTest = areConnectionSnapshotsEqual(
+  const isCurrentLocalConnectionTest = areLocalConnectionSnapshotsEqual(
     localConnectionTest.snapshot,
     currentLocalConnectionSnapshot,
   );
@@ -498,8 +395,6 @@ export default function Settings() {
       toast.error('Test the localhost connection before saving.');
       return;
     }
-
-    console.log('onSubmit', values);
 
     updateSetting({
       ...settings,
@@ -910,7 +805,6 @@ export default function Settings() {
                   control={form.control}
                   name="maxLoopCount"
                   render={({ field }) => {
-                    // console.log('field', field);
                     return (
                       <FormItem>
                         <FormLabel>Max Loop</FormLabel>
