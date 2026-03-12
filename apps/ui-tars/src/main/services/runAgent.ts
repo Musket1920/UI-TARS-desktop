@@ -115,6 +115,24 @@ const shouldRecordRuntimeCircuitFailure = (reasonCode: string) => {
   return !NON_CIRCUITABLE_RUNTIME_FAILURE_CODES.has(reasonCode);
 };
 
+const isUsableAgentSSidecarStatus = (
+  sidecarHealthStatus:
+    | Awaited<ReturnType<typeof agentSSidecarManager.health>>
+    | null
+    | undefined,
+): sidecarHealthStatus is Awaited<
+  ReturnType<typeof agentSSidecarManager.health>
+> & { endpoint: string } => {
+  const treatTransientProbeFailureAsHealthy =
+    sidecarHealthStatus?.transientProbeFailure === true &&
+    !!sidecarHealthStatus.endpoint;
+
+  return (
+    !!sidecarHealthStatus?.endpoint &&
+    (!!sidecarHealthStatus.healthy || treatTransientProbeFailureAsHealthy)
+  );
+};
+
 export const runAgent = async (
   setState: (state: AppState) => void,
   getState: () => AppState,
@@ -325,9 +343,7 @@ export const runAgent = async (
     }
 
     const canUseAgentSRuntime =
-      shouldAttemptAgentS &&
-      !!sidecarHealthStatus?.healthy &&
-      !!sidecarHealthStatus.endpoint;
+      shouldAttemptAgentS && isUsableAgentSSidecarStatus(sidecarHealthStatus);
 
     if (runCorrelation) {
       emitAgentSTelemetry(

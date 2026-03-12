@@ -319,6 +319,45 @@ describe('dispatcher-agent-s-selected runAgent dispatcher', () => {
     });
   });
 
+  it('selects Agent-S runtime when a transient probe failure still returns an endpoint', async () => {
+    const { setState, getState } = createStateHandlers();
+
+    sidecarHealthMock.mockResolvedValueOnce({
+      state: 'unhealthy',
+      mode: 'embedded',
+      healthy: false,
+      endpoint: 'http://127.0.0.1:10800',
+      pid: 999,
+      checkedAt: 1_000,
+      lastHeartbeatAt: null,
+      reason: 'heartbeat_failed',
+      transientProbeFailure: true,
+    });
+
+    await runAgent(
+      setState as unknown as RunAgentSetState,
+      getState as unknown as RunAgentGetState,
+    );
+
+    expect(sidecarHealthMock).toHaveBeenCalledWith({ probe: true });
+    expect(runAgentSRuntimeLoopMock).toHaveBeenCalledTimes(1);
+    expect(guiAgentCtorMock).not.toHaveBeenCalled();
+    expect(guiAgentRunMock).not.toHaveBeenCalled();
+    expect(utioSendInstructionMock).not.toHaveBeenCalled();
+    expect(sidecarRecordCircuitFailureMock).not.toHaveBeenCalled();
+    expect(sidecarRecordCircuitSuccessMock).toHaveBeenCalledTimes(1);
+
+    const engineSelectedEvent = emitAgentSTelemetryMock.mock.calls.find(
+      (call) => call[0] === 'agent_s.engine.selected',
+    );
+
+    expect(engineSelectedEvent?.[1]).toMatchObject({
+      selectedRuntime: 'agent_s',
+      sidecarHealthy: false,
+      featureEnabled: true,
+    });
+  });
+
   it.each([
     ['AGENT_S_OPERATOR_ERROR', 'operator exploded'],
     ['AGENT_S_OPERATOR_TIMEOUT', 'operator timed out'],
