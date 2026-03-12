@@ -6,10 +6,11 @@ import {
   DialogTitle,
 } from '@renderer/components/ui/dialog';
 import { Button } from '@renderer/components/ui/button';
+import { VLMConnectionMode } from '@main/store/types';
 import { LocalStore } from '@main/store/validate';
 
 import { VLMSettings, VLMSettingsRef } from './category/vlm';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 interface LocalSettingsDialogProps {
   isOpen: boolean;
@@ -22,13 +23,26 @@ export const checkVLMSettings = async () => {
 
   const currentSetting = ((await settingRpc.getSetting()) ||
     {}) as Partial<LocalStore>;
-  const { vlmApiKey, vlmBaseUrl, vlmModelName, vlmProvider } = currentSetting;
+  const {
+    vlmConnectionMode,
+    vlmApiKey,
+    vlmBaseUrl,
+    vlmModelName,
+    vlmProvider,
+  } = currentSetting;
 
-  if (vlmApiKey && vlmBaseUrl && vlmModelName && vlmProvider) {
+  if (!vlmBaseUrl || !vlmModelName || !vlmProvider) {
+    return false;
+  }
+
+  if (
+    (vlmConnectionMode ?? VLMConnectionMode.Managed) ===
+    VLMConnectionMode.LocalhostOpenAICompatible
+  ) {
     return true;
   }
 
-  return false;
+  return Boolean(vlmApiKey);
 };
 
 export const LocalSettingsDialog = ({
@@ -37,6 +51,7 @@ export const LocalSettingsDialog = ({
   onClose,
 }: LocalSettingsDialogProps) => {
   const vlmSettingsRef = useRef<VLMSettingsRef>(null);
+  const [canStart, setCanStart] = useState(false);
 
   const handleGetStart = async () => {
     try {
@@ -52,13 +67,16 @@ export const LocalSettingsDialog = ({
       <DialogContent className="max-w-[480]">
         <DialogHeader>
           <DialogTitle>VLM Settings</DialogTitle>
-          <DialogDescription>
-            Enter VLM settings to enable the model to control the local computer
-            or browser.
-          </DialogDescription>
-        </DialogHeader>
-        <VLMSettings ref={vlmSettingsRef} />
-        <Button className="mt-8 mx-8" onClick={handleGetStart}>
+        <DialogDescription>
+          Enter VLM settings to enable the model to control the local computer
+          or browser.
+        </DialogDescription>
+      </DialogHeader>
+        <VLMSettings
+          ref={vlmSettingsRef}
+          onSubmitAvailabilityChange={setCanStart}
+        />
+        <Button className="mt-8 mx-8" onClick={handleGetStart} disabled={!canStart}>
           Get Start
         </Button>
       </DialogContent>

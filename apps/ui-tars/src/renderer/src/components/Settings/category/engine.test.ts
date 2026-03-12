@@ -4,6 +4,7 @@ import {
   AgentSSidecarMode,
   EngineMode,
   Operator,
+  VLMConnectionMode,
   type LocalStore,
 } from '../../../../../main/store/types';
 
@@ -15,6 +16,10 @@ vi.mock('@main/store/types', () => ({
   EngineMode: {
     UITARS: 'ui-tars',
     AgentS: 'agent-s',
+  },
+  VLMConnectionMode: {
+    Managed: 'managed',
+    LocalhostOpenAICompatible: 'localhost-openai-compatible',
   },
   Operator: {
     LocalComputer: 'Local Computer Operator',
@@ -113,9 +118,11 @@ const createDeferred = <T>() => {
 
 describe('Agent-S settings form reset trigger', () => {
   const persistedAgentSSettings: LocalStore = {
+    vlmConnectionMode: VLMConnectionMode.Managed,
     vlmBaseUrl: 'https://vlm.example.com',
     vlmApiKey: 'test-key',
     vlmModelName: 'ui-tars-test',
+    useResponsesApi: false,
     operator: Operator.LocalComputer,
     engineMode: EngineMode.AgentS,
     agentSSidecarMode: AgentSSidecarMode.Remote,
@@ -154,9 +161,11 @@ describe('Agent-S settings form reset trigger', () => {
 
 describe('Agent-S settings persist effect inputs', () => {
   const persistedAgentSSettings: LocalStore = {
+    vlmConnectionMode: VLMConnectionMode.Managed,
     vlmBaseUrl: 'https://vlm.example.com',
     vlmApiKey: 'test-key',
     vlmModelName: 'ui-tars-test',
+    useResponsesApi: false,
     operator: Operator.LocalComputer,
     engineMode: EngineMode.AgentS,
     agentSSidecarMode: AgentSSidecarMode.Remote,
