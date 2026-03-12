@@ -14,7 +14,6 @@ type OpenAIConfig = ConstructorParameters<typeof OpenAI>[0];
 const PROBE_TIMEOUT_MS = 1_500;
 const PROBE_REQUEST_OPTIONS = {
   maxRetries: 0,
-  timeout: PROBE_TIMEOUT_MS,
 } as const;
 
 type SettingInputBase = {
@@ -336,7 +335,6 @@ export const settingRoute = t.router({
           'responses API',
           probeResponsesApiSupport(input),
         );
-        SettingStore.set('useResponsesApi', useResponsesApi);
 
         if (!useResponsesApi) {
           return {
@@ -347,6 +345,8 @@ export const settingRoute = t.router({
             errorMessage: 'Responses API probe returned an empty response.',
           } satisfies LocalVLMConnectionTestResult;
         }
+
+        SettingStore.set('useResponsesApi', true);
 
         return {
           ok: true,
