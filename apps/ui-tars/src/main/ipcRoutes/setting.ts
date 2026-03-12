@@ -12,9 +12,11 @@ const t = initIpc.create();
 type OpenAIConfig = ConstructorParameters<typeof OpenAI>[0];
 
 const PROBE_TIMEOUT_MS = 1_500;
+type ProbeRequestOptions = OpenAI.RequestOptions;
+
 const PROBE_REQUEST_OPTIONS = {
   maxRetries: 0,
-} as const;
+} satisfies ProbeRequestOptions;
 
 type SettingInputBase = {
   baseUrl: string;
@@ -100,25 +102,38 @@ const createProbeTimeoutError = (probeName: string): Error => {
   );
 };
 
+const createProbeRequestOptions = (signal?: AbortSignal): ProbeRequestOptions => {
+  return {
+    ...PROBE_REQUEST_OPTIONS,
+    signal,
+  };
+};
+
+const createModelNotFoundError = (modelName: string): Error => {
+  const error = new Error(`The model \`${modelName}\` does not exist`);
+  const errorRecord = error as Error & { code?: string; status?: number };
+
+  errorRecord.code = 'model_not_found';
+  errorRecord.status = 404;
+
+  return error;
+};
+
 const withProbeTimeout = async <T>(
   probeName: string,
-  operation: Promise<T>,
+  operation: (requestOptions: ProbeRequestOptions) => Promise<T>,
 ): Promise<T> => {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutSignal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+  const timeoutError = createProbeTimeoutError(probeName);
 
   try {
-    return await Promise.race([
-      operation,
-      new Promise<T>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(createProbeTimeoutError(probeName));
-        }, PROBE_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timeoutId !== null) {
-      clearTimeout(timeoutId);
+    return await operation(createProbeRequestOptions(timeoutSignal));
+  } catch (error) {
+    if (timeoutSignal.aborted) {
+      throw timeoutError;
     }
+
+    throw error;
   }
 };
 
@@ -243,21 +258,24 @@ const classifyResponsesProbeError = (
   return 'UNKNOWN';
 };
 
-const probeModelAvailability = async (input: VLMCheckInput): Promise<boolean> => {
+const probeModelAvailability = async (
+  input: VLMCheckInput,
+  requestOptions: ProbeRequestOptions = PROBE_REQUEST_OPTIONS,
+): Promise<boolean> => {
   const openai = getOpenAIClient(input);
-  const completion = await openai.chat.completions.create(
-    {
-      model: input.modelName,
-      messages: [{ role: 'user', content: 'return 1+1=?' }],
-      stream: false,
-    },
-    PROBE_REQUEST_OPTIONS,
-  );
+  const models = await openai.models.list(requestOptions);
 
-  return Boolean(completion?.id || completion.choices[0].message.content);
+  if (!models.data.some((model) => model.id === input.modelName)) {
+    throw createModelNotFoundError(input.modelName);
+  }
+
+  return true;
 };
 
-const probeResponsesApiSupport = async (input: VLMCheckInput): Promise<boolean> => {
+const probeResponsesApiSupport = async (
+  input: VLMCheckInput,
+  requestOptions: ProbeRequestOptions = PROBE_REQUEST_OPTIONS,
+): Promise<boolean> => {
   const openai = getOpenAIClient(input);
   const result = await openai.responses.create(
     {
@@ -265,7 +283,7 @@ const probeResponsesApiSupport = async (input: VLMCheckInput): Promise<boolean> 
       input: 'return 1+1=?',
       stream: false,
     },
-    PROBE_REQUEST_OPTIONS,
+    requestOptions,
   );
 
   return Boolean(result?.id || result?.previous_response_id);
@@ -308,7 +326,7 @@ export const settingRoute = t.router({
       try {
         const modelAvailable = await withProbeTimeout(
           'model availability',
-          probeModelAvailability(input),
+          (requestOptions) => probeModelAvailability(input, requestOptions),
         );
         if (!modelAvailable) {
           return {
@@ -333,7 +351,7 @@ export const settingRoute = t.router({
       try {
         const useResponsesApi = await withProbeTimeout(
           'responses API',
-          probeResponsesApiSupport(input),
+          (requestOptions) => probeResponsesApiSupport(input, requestOptions),
         );
 
         if (!useResponsesApi) {

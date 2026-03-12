@@ -53,6 +53,10 @@ const getFixturePaths = () => {
   return fixture?.requests.map((request) => request.path) ?? [];
 };
 
+const getFixtureRequests = () => {
+  return fixture?.requests ?? [];
+};
+
 const invalidInput = {
   baseUrl: 'localhost:11434/v1',
   apiKey: '',
@@ -71,7 +75,7 @@ describe('settingRoute.checkModelAvailability', () => {
     }
   });
 
-  it('uses the localhost fixture chat success path', async () => {
+  it('uses the localhost fixture models lookup path', async () => {
     const input = await createFixture('chat-success');
 
     await expect(
@@ -80,7 +84,7 @@ describe('settingRoute.checkModelAvailability', () => {
         context: {} as SettingRouteContext,
       }),
     ).resolves.toBe(true);
-    expect(getFixturePaths()).toEqual(['/v1/chat/completions']);
+    expect(getFixturePaths()).toEqual(['/v1/models']);
   });
 });
 
@@ -150,9 +154,9 @@ describe('settingRoute.testLocalVLMConnection', () => {
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
-  it('classifies hanging hosts from the chat-completions probe as unreachable', async () => {
+  it('classifies hanging /v1/models probes as unreachable and aborts the request', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
-      input: await createFixture('unreachable-host'),
+      input: await createFixture('models-timeout'),
       context: {} as SettingRouteContext,
     });
 
@@ -163,11 +167,14 @@ describe('settingRoute.testLocalVLMConnection', () => {
       errorCode: 'UNREACHABLE',
       errorMessage: expect.stringMatching(/timed out|timeout/i),
     });
-    expect(getFixturePaths()).toEqual([]);
+    expect(getFixturePaths()).toEqual(['/v1/models']);
+    await expect
+      .poll(() => getFixtureRequests()[0]?.aborted)
+      .toBe(true);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
-  it('classifies missing models from the chat-completions probe', async () => {
+  it('classifies missing models from the /v1/models probe', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
       input: await createFixture('invalid-model', {
         modelName: 'missing-model',
@@ -184,7 +191,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
         'The model `missing-model` does not exist',
       ),
     });
-    expect(getFixturePaths()).toEqual(['/v1/chat/completions']);
+    expect(getFixturePaths()).toEqual(['/v1/models']);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
@@ -202,7 +209,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
       errorMessage: expect.stringContaining('404 Not Found for POST /responses'),
     });
     expect(getFixturePaths()).toEqual([
-      '/v1/chat/completions',
+      '/v1/models',
       '/v1/responses',
     ]);
     expect(settingStoreSetMock).toHaveBeenCalledTimes(1);
@@ -225,7 +232,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
       ),
     });
     expect(getFixturePaths()).toEqual([
-      '/v1/chat/completions',
+      '/v1/models',
       '/v1/responses',
     ]);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
@@ -245,9 +252,12 @@ describe('settingRoute.testLocalVLMConnection', () => {
       errorMessage: expect.stringMatching(/timed out|timeout/i),
     });
     expect(getFixturePaths()).toEqual([
-      '/v1/chat/completions',
+      '/v1/models',
       '/v1/responses',
     ]);
+    await expect
+      .poll(() => getFixtureRequests()[1]?.aborted)
+      .toBe(true);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
@@ -264,7 +274,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
       errorCode: 'UNKNOWN',
       errorMessage: expect.stringContaining('invalid json response body'),
     });
-    expect(getFixturePaths()).toEqual(['/v1/chat/completions']);
+    expect(getFixturePaths()).toEqual(['/v1/models']);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
@@ -282,7 +292,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
       errorMessage: null,
     });
     expect(getFixturePaths()).toEqual([
-      '/v1/chat/completions',
+      '/v1/models',
       '/v1/responses',
     ]);
     expect(settingStoreSetMock).toHaveBeenCalledTimes(1);

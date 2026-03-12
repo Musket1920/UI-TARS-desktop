@@ -7,6 +7,7 @@ import { createServer as createNetServer, type Socket } from 'node:net';
 
 export type LocalhostOpenAICompatibleFixtureState =
   | 'chat-success'
+  | 'models-timeout'
   | 'responses-supported'
   | 'responses-generic-error'
   | 'responses-timeout'
@@ -19,6 +20,7 @@ export interface LocalhostOpenAICompatibleFixtureRequest {
   method: string;
   path: string;
   body: unknown;
+  aborted: boolean;
 }
 
 export interface LocalhostOpenAICompatibleFixtureInput {
@@ -141,6 +143,21 @@ const writeChatSuccess = (
   });
 };
 
+const writeModelsSuccess = (
+  response: ServerResponse,
+  modelNames: string[],
+): void => {
+  writeJson(response, 200, {
+    object: 'list',
+    data: modelNames.map((modelName) => ({
+      id: modelName,
+      object: 'model',
+      created: 0,
+      owned_by: 'fixture',
+    })),
+  });
+};
+
 const writeResponsesSuccess = (
   response: ServerResponse,
   modelName: string,
@@ -166,8 +183,39 @@ const createLocalhostOpenAICompatibleServer = (
       const url = new URL(request.url ?? '/', `http://${LOCALHOST_HOST}`);
       const path = url.pathname;
       const body = method === 'POST' ? await readJsonBody(request) : null;
+      const requestRecord = {
+        method,
+        path,
+        body,
+        aborted: false,
+      };
 
-      requests.push({ method, path, body });
+      requests.push(requestRecord);
+      request.on('aborted', () => {
+        requestRecord.aborted = true;
+      });
+      response.on('close', () => {
+        if (!response.writableEnded) {
+          requestRecord.aborted = true;
+        }
+      });
+
+      if (path === '/v1/models') {
+        if (state === 'models-timeout') {
+          return;
+        }
+
+        if (state === 'malformed-payload') {
+          writeMalformedJson(response);
+          return;
+        }
+
+        writeModelsSuccess(
+          response,
+          state === 'invalid-model' ? [`${modelName}-available`] : [modelName],
+        );
+        return;
+      }
 
       if (path === '/v1/chat/completions') {
         if (state === 'invalid-model') {
