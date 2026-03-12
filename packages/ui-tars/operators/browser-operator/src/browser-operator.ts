@@ -12,6 +12,7 @@ import {
   BrowserInterface,
   RemoteBrowser,
 } from '@agent-infra/browser';
+import type { KeyInput } from '@agent-infra/browser';
 import type {
   ScreenshotOutput,
   ExecuteParams,
@@ -391,7 +392,7 @@ export class BrowserOperator extends Operator {
 
     if (rawContent === '') {
       this.logger.info('Clearing selected content');
-      await page.keyboard.press('ControlOrMeta+A');
+      await page.keyboard.press('ControlOrMeta+A' as KeyInput);
       await this.delay(50);
       await page.keyboard.press('Backspace');
       return;
@@ -430,7 +431,7 @@ export class BrowserOperator extends Operator {
     this.logger.info(`Executing hotkey: ${keyStr}`);
 
     const keys = keyStr.split(/[\s+]/);
-    const normalizedKeys: KeyInput[] = keys.map((key: string) => {
+    const normalizedKeys = keys.map((key: string) => {
       const lowercaseKey = key.toLowerCase();
       const keyInput = KEY_MAPPINGS[lowercaseKey];
 
@@ -470,7 +471,7 @@ export class BrowserOperator extends Operator {
     this.logger.info(`Pressing key: ${keyStr}`);
 
     const keys = keyStr.split(/[\s+]/);
-    const normalizedKeys: KeyInput[] = keys.map((key: string) => {
+    const normalizedKeys = keys.map((key: string) => {
       const lowercaseKey = key.toLowerCase();
       const keyInput = KEY_MAPPINGS[lowercaseKey];
 
@@ -504,7 +505,7 @@ export class BrowserOperator extends Operator {
     this.logger.info(`Releasing key: ${keyStr}`);
 
     const keys = keyStr.split(/[\s+]/);
-    const normalizedKeys: KeyInput[] = keys.map((key: string) => {
+    const normalizedKeys = keys.map((key: string) => {
       const lowercaseKey = key.toLowerCase();
       const keyInput = KEY_MAPPINGS[lowercaseKey];
 
