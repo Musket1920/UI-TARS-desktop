@@ -7,6 +7,9 @@ const forwardedArgs = process.argv.slice(2);
 const normalizedArgs =
   forwardedArgs[0] === '--' ? forwardedArgs.slice(1) : forwardedArgs;
 const outDir = resolve(__dirname, '../out');
+const shouldBuild = process.env.CI ? true : !existsSync(outDir);
+const buildCommand = process.platform === 'win32' ? process.env.ComSpec || 'cmd.exe' : 'pnpm';
+const buildArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'pnpm run build:e2e'] : ['run', 'build:e2e'];
 
 const runCommand = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -24,8 +27,8 @@ const runCommand = (command, args, options = {}) => {
   }
 };
 
-if (!existsSync(outDir)) {
-  runCommand('npm', ['run', 'build:e2e'], { shell: true });
+if (shouldBuild) {
+  runCommand(buildCommand, buildArgs);
 }
 
 runCommand(process.execPath, [cliPath, 'test', ...normalizedArgs]);

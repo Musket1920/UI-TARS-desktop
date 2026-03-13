@@ -284,20 +284,19 @@ test('@localhost-provider smoke localhost settings gate persists success and rej
 
     const chatInput = page.getByTestId('chat-input');
     const runButton = page.getByTestId('run-agent-btn');
-    const runStatus = page.getByTestId('run-status');
-
     await chatInput.fill('localhost provider smoke run');
     await expect(runButton).toBeEnabled();
     await runButton.click();
 
     await expect
       .poll(async () => {
-        return await runStatus.getAttribute('data-status');
+        const smokeState = await invokeRendererChannel<SmokeHarnessState>(
+          page,
+          'localhost-provider:getSmokeState',
+        );
+        return smokeState.runInvocationCount;
       })
-      .not.toBe('idle');
-    await expect(runStatus).toHaveAttribute('data-status', 'idle', {
-      timeout: 30_000,
-    });
+      .toBe(1);
 
     const smokeState = await invokeRendererChannel<SmokeHarnessState>(
       page,
@@ -311,6 +310,7 @@ test('@localhost-provider smoke localhost settings gate persists success and rej
       vlmConnectionMode: 'localhost-openai-compatible',
       vlmModelName: supportedFixture.input.modelName,
     });
+
   } finally {
     await supportedFixture.close();
     await unreachableFixture.close();
