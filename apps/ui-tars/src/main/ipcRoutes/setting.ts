@@ -82,6 +82,8 @@ const RESPONSES_UNSUPPORTED_REASON_HINTS = [
   'does not support',
 ] as const;
 
+const TIMEOUT_HINTS = ['timed out', 'timeout'] as const;
+
 const buildOpenAIConfig = (
   baseURL: string,
   apiKeyValue: string,
@@ -218,6 +220,10 @@ const hasResponsesUnsupportedHint = (error: unknown): boolean => {
       RESPONSES_UNSUPPORTED_REASON_HINTS.some((hint) => detail.includes(hint))
     );
   });
+};
+
+const isTimeoutLikeError = (error: unknown): boolean => {
+  return hasHint(error, TIMEOUT_HINTS);
 };
 
 const classifyModelProbeError = (
@@ -382,12 +388,15 @@ export const settingRoute = t.router({
         logger.warn('[testLocalVLMConnection] responses probe failed:', error);
         const errorCode = classifyResponsesProbeError(error);
 
-        if (errorCode === 'RESPONSES_UNSUPPORTED') {
+        if (
+          errorCode === 'RESPONSES_UNSUPPORTED' ||
+          (errorCode === 'UNREACHABLE' && isTimeoutLikeError(error))
+        ) {
           return {
             ok: true,
             modelAvailable: true,
             useResponsesApi: false,
-            errorCode,
+            errorCode: 'RESPONSES_UNSUPPORTED',
             errorMessage: getErrorMessage(error),
           } satisfies LocalVLMConnectionTestResult;
         }

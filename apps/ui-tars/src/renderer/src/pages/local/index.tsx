@@ -222,6 +222,7 @@ const LocalOperator = () => {
 
   const checkVLM = async () => {
     if (allowFreshLocalValidation) {
+      setAllowFreshLocalValidation(false);
       return true;
     }
 

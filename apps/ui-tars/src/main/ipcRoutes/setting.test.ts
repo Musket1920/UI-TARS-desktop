@@ -370,17 +370,17 @@ describe('settingRoute.testLocalVLMConnection', () => {
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
-  it('classifies hanging /responses probes as unreachable', async () => {
+  it('falls back to chat completions when /responses probes time out', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
       input: await createFixture('responses-timeout'),
       context: {} as SettingRouteContext,
     });
 
     expect(result).toEqual({
-      ok: false,
+      ok: true,
       modelAvailable: true,
       useResponsesApi: false,
-      errorCode: 'UNREACHABLE',
+      errorCode: 'RESPONSES_UNSUPPORTED',
       errorMessage: expect.stringMatching(/timed out|timeout/i),
     });
     expect(getFixturePaths()).toEqual([
