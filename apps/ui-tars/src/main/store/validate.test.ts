@@ -180,6 +180,29 @@ describe('validateLocalStore schema for localhost connection mode', () => {
     ).toThrow(/vlmApiKey/);
   });
 
+  it('accepts empty persisted report URLs', () => {
+    const validated = validateLocalStore({
+      ...baseLocalStore(),
+      reportStorageBaseUrl: '',
+      utioBaseUrl: '',
+    });
+
+    expect(validated.reportStorageBaseUrl).toBe('');
+    expect(validated.utioBaseUrl).toBe('');
+  });
+
+  it.each(['reportStorageBaseUrl', 'utioBaseUrl'] as const)(
+    'rejects invalid non-empty %s values',
+    (field) => {
+      expect(() =>
+        validateLocalStore({
+          ...baseLocalStore(),
+          [field]: 'not-a-url',
+        }),
+      ).toThrow(new RegExp(field));
+    },
+  );
+
   it('rejects localhost mode when Agent-S is selected', () => {
     expect(() =>
       validateLocalStore({

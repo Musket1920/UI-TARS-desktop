@@ -5,7 +5,6 @@
 import { OpenAI } from 'openai';
 import { initIpc } from '@ui-tars/electron-ipc/main';
 import { logger } from '../logger';
-import { SettingStore } from '../store/setting';
 
 const t = initIpc.create();
 
@@ -298,7 +297,9 @@ export const settingRoute = t.router({
     .input<VLMCheckInput>()
     .handle(async ({ input }) => {
       try {
-        return await probeResponsesApiSupport(input);
+        return await withProbeTimeout('responses API', (requestOptions) =>
+          probeResponsesApiSupport(input, requestOptions),
+        );
       } catch (e) {
         logger.warn('[checkVLMResponseApiSupport] failed:', e);
         return false;
@@ -308,7 +309,9 @@ export const settingRoute = t.router({
     .input<VLMCheckInput>()
     .handle(async ({ input }) => {
       try {
-        return await probeModelAvailability(input);
+        return await withProbeTimeout('model availability', (requestOptions) =>
+          probeModelAvailability(input, requestOptions),
+        );
       } catch (e) {
         logger.warn('[checkModelAvailability] failed:', e);
         throw e;
@@ -368,8 +371,6 @@ export const settingRoute = t.router({
           } satisfies LocalVLMConnectionTestResult;
         }
 
-        SettingStore.set('useResponsesApi', true);
-
         return {
           ok: true,
           modelAvailable: true,
@@ -382,7 +383,6 @@ export const settingRoute = t.router({
         const errorCode = classifyResponsesProbeError(error);
 
         if (errorCode === 'RESPONSES_UNSUPPORTED') {
-          SettingStore.set('useResponsesApi', false);
           return {
             ok: true,
             modelAvailable: true,

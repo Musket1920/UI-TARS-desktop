@@ -176,6 +176,19 @@ describe('settingRoute.checkModelAvailability', () => {
     ).resolves.toBe(false);
     expect(getFixturePaths()).toEqual(['/v1/models']);
   });
+
+  it('times out slow /v1/models probes and aborts the request', async () => {
+    await expect(
+      settingRoute.checkModelAvailability.handle({
+        input: await createFixture('models-timeout'),
+        context: {} as SettingRouteContext,
+      }),
+    ).rejects.toThrow(/timed out|timeout/i);
+    expect(getFixturePaths()).toEqual(['/v1/models']);
+    await expect
+      .poll(() => getFixtureRequests()[0]?.aborted)
+      .toBe(true);
+  });
 });
 
 describe('settingRoute.checkVLMResponseApiSupport', () => {
@@ -212,6 +225,19 @@ describe('settingRoute.checkVLMResponseApiSupport', () => {
       }),
     ).resolves.toBe(false);
     expect(getFixturePaths()).toEqual(['/v1/responses']);
+  });
+
+  it('returns false for slow /responses probes and aborts the request', async () => {
+    await expect(
+      settingRoute.checkVLMResponseApiSupport.handle({
+        input: await createFixture('responses-timeout'),
+        context: {} as SettingRouteContext,
+      }),
+    ).resolves.toBe(false);
+    expect(getFixturePaths()).toEqual(['/v1/responses']);
+    await expect
+      .poll(() => getFixtureRequests()[0]?.aborted)
+      .toBe(true);
   });
 });
 
@@ -302,7 +328,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
-  it('persists false when chat works but the responses API is unsupported', async () => {
+  it('returns partial success without persisting when the responses API is unsupported', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
       input: await createFixture('responses-unsupported'),
       context: {} as SettingRouteContext,
@@ -319,8 +345,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
       '/v1/models',
       '/v1/responses',
     ]);
-    expect(settingStoreSetMock).toHaveBeenCalledTimes(1);
-    expect(settingStoreSetMock).toHaveBeenCalledWith('useResponsesApi', false);
+    expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
   it('does not treat generic responses and unsupported text as /responses unsupported', async () => {
@@ -385,7 +410,7 @@ describe('settingRoute.testLocalVLMConnection', () => {
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
-  it('persists true when both probes succeed', async () => {
+  it('returns success without persisting when both probes succeed', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
       input: await createFixture('responses-supported'),
       context: {} as SettingRouteContext,
@@ -402,7 +427,6 @@ describe('settingRoute.testLocalVLMConnection', () => {
       '/v1/models',
       '/v1/responses',
     ]);
-    expect(settingStoreSetMock).toHaveBeenCalledTimes(1);
-    expect(settingStoreSetMock).toHaveBeenCalledWith('useResponsesApi', true);
+    expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 });

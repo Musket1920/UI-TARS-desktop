@@ -19,6 +19,8 @@ import {
   AgentSSidecarMode,
 } from './types';
 
+const OptionalUrlOrEmptyStringSchema = z.union([z.literal(''), z.string().url()]).optional();
+
 const PresetSourceSchema = z.object({
   type: z.enum(['local', 'remote']),
   url: z.string().url().optional(),
@@ -50,8 +52,8 @@ const CommonSettingsSchema = z.object({
   agentSEnableLocalEnv: z.boolean().optional(),
 
   // Report Settings
-  reportStorageBaseUrl: z.string().url().optional(),
-  utioBaseUrl: z.string().url().optional(),
+  reportStorageBaseUrl: OptionalUrlOrEmptyStringSchema,
+  utioBaseUrl: OptionalUrlOrEmptyStringSchema,
 });
 
 const ManagedVLMSettingsSchema = z.object({
