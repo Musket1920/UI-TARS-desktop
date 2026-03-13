@@ -265,6 +265,10 @@ const probeModelAvailability = async (
   const openai = getOpenAIClient(input);
   const models = await openai.models.list(requestOptions);
 
+  if (models.data.length === 0) {
+    return false;
+  }
+
   if (!models.data.some((model) => model.id === input.modelName)) {
     throw createModelNotFoundError(input.modelName);
   }

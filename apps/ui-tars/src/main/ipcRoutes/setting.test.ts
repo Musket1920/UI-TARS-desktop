@@ -2,6 +2,8 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
+import { createServer } from 'node:http';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -36,7 +38,12 @@ type SettingRouteContext = Parameters<
   typeof settingRoute.testLocalVLMConnection.handle
 >[0]['context'];
 
-let fixture: LocalhostOpenAICompatibleFixture | null = null;
+type ActiveFixture = Pick<
+  LocalhostOpenAICompatibleFixture,
+  'input' | 'requests' | 'close'
+>;
+
+let fixture: ActiveFixture | null = null;
 
 const createFixture = async (
   state: LocalhostOpenAICompatibleFixtureState,
@@ -47,6 +54,77 @@ const createFixture = async (
     ...fixture.input,
     ...overrides,
   };
+};
+
+const createEmptyModelsFixture = async () => {
+  const requests: LocalhostOpenAICompatibleFixture['requests'] = [];
+  const server = createServer((request, response) => {
+    const method = request.method ?? 'GET';
+    const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+
+    requests.push({
+      method,
+      path,
+      body: null,
+      aborted: false,
+    });
+
+    if (path === '/v1/models') {
+      response.statusCode = 200;
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({
+        object: 'list',
+        data: [],
+      }));
+      return;
+    }
+
+    response.statusCode = 404;
+    response.setHeader('content-type', 'application/json');
+    response.end(
+      JSON.stringify({
+        error: {
+          message: `No fixture route for ${method} ${path}`,
+        },
+      }),
+    );
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('Could not determine empty models fixture address');
+  }
+
+  fixture = {
+    input: {
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      apiKey: 'fixture-api-key', // secretlint-disable-line @secretlint/secretlint-rule-pattern -- fixture-only placeholder value for empty models coverage
+      modelName: 'fixture-model',
+    },
+    requests,
+    close: async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    },
+  };
+
+  return fixture.input;
 };
 
 const getFixturePaths = () => {
@@ -84,6 +162,18 @@ describe('settingRoute.checkModelAvailability', () => {
         context: {} as SettingRouteContext,
       }),
     ).resolves.toBe(true);
+    expect(getFixturePaths()).toEqual(['/v1/models']);
+  });
+
+  it('treats an empty /v1/models response as inconclusive', async () => {
+    const input = await createEmptyModelsFixture();
+
+    await expect(
+      settingRoute.checkModelAvailability.handle({
+        input,
+        context: {} as SettingRouteContext,
+      }),
+    ).resolves.toBe(false);
     expect(getFixturePaths()).toEqual(['/v1/models']);
   });
 });
@@ -190,6 +280,23 @@ describe('settingRoute.testLocalVLMConnection', () => {
       errorMessage: expect.stringContaining(
         'The model `missing-model` does not exist',
       ),
+    });
+    expect(getFixturePaths()).toEqual(['/v1/models']);
+    expect(settingStoreSetMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to UNKNOWN when /v1/models returns an empty list', async () => {
+    const result = await settingRoute.testLocalVLMConnection.handle({
+      input: await createEmptyModelsFixture(),
+      context: {} as SettingRouteContext,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      modelAvailable: false,
+      useResponsesApi: false,
+      errorCode: 'UNKNOWN',
+      errorMessage: 'Model availability probe returned an empty response.',
     });
     expect(getFixturePaths()).toEqual(['/v1/models']);
     expect(settingStoreSetMock).not.toHaveBeenCalled();

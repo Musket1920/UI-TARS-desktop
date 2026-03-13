@@ -186,4 +186,21 @@ operator: ${Operator.LocalComputer}
     expect(settings.vlmModelName).toBe('preset-model');
     expect(settings.useResponsesApi).toBe(true);
   });
+
+  it('rejects invalid localhost combinations before persisting full store state', async () => {
+    const { SettingStore } = await import('./setting');
+
+    expect(() =>
+      SettingStore.setStore(
+        createSettings({
+          operator: Operator.RemoteComputer,
+          vlmConnectionMode: VLMConnectionMode.LocalhostOpenAICompatible,
+          vlmBaseUrl: 'http://127.0.0.1:11434/v1',
+          vlmApiKey: '',
+          vlmModelName: 'ui-tars-1.5-7b',
+        }),
+      ),
+    ).toThrow(/legacy UI-TARS local operators/);
+    expect(electronStoreSetMock).not.toHaveBeenCalled();
+  });
 });

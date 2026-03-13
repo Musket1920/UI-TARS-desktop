@@ -19,7 +19,7 @@ import {
   EngineMode,
   AgentSSidecarMode,
 } from './types';
-import { validatePreset } from './validate';
+import { validateLocalStore, validatePreset } from './validate';
 import { BrowserWindow } from 'electron';
 import { enforceAgentSSafetyPolicy } from './safetyPolicy';
 
@@ -140,7 +140,8 @@ export class SettingStore {
   }
 
   public static setStore(state: LocalStore): void {
-    SettingStore.getInstance().set(enforceAgentSSafetyPolicy(state));
+    const safeState = validateLocalStore(enforceAgentSSafetyPolicy(state));
+    SettingStore.getInstance().set(safeState);
   }
 
   public static get<K extends keyof LocalStore>(key: K): LocalStore[K] {
