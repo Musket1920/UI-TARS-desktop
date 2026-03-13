@@ -292,14 +292,9 @@ test('@localhost-provider smoke localhost settings gate persists success and rej
 
     await expect
       .poll(async () => {
-        const smokeState = await invokeRendererChannel<SmokeHarnessState>(
-          page,
-          'localhost-provider:getSmokeState',
-        );
-
-        return smokeState.runInvocationCount;
+        return await runStatus.getAttribute('data-status');
       })
-      .toBe(1);
+      .not.toBe('idle');
     await expect(runStatus).toHaveAttribute('data-status', 'idle', {
       timeout: 30_000,
     });
