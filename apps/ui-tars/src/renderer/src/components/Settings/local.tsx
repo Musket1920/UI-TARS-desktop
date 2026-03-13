@@ -67,11 +67,11 @@ export const LocalSettingsDialog = ({
       <DialogContent className="max-w-[480]">
         <DialogHeader>
           <DialogTitle>VLM Settings</DialogTitle>
-        <DialogDescription>
-          Enter VLM settings to enable the model to control the local computer
-          or browser.
-        </DialogDescription>
-      </DialogHeader>
+          <DialogDescription>
+            Enter VLM settings to enable the model to control the local computer
+            or browser.
+          </DialogDescription>
+        </DialogHeader>
         <VLMSettings
           ref={vlmSettingsRef}
           onSubmitAvailabilityChange={setCanStart}

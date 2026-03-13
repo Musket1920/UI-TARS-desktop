@@ -191,9 +191,6 @@ const createLocalhostOpenAICompatibleServer = (
       };
 
       requests.push(requestRecord);
-      request.on('aborted', () => {
-        requestRecord.aborted = true;
-      });
       response.on('close', () => {
         if (!response.writableEnded) {
           requestRecord.aborted = true;
