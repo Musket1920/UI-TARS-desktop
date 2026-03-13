@@ -258,7 +258,7 @@ describe('legacy localhost runtime model selection', () => {
         expect.objectContaining({
           model: {
             baseURL: 'http://127.0.0.1:11434/v1',
-            apiKey: '',
+            apiKey: '', // secretlint-disable-line @secretlint/secretlint-rule-pattern -- intentionally empty for localhost runtime coverage
             model: 'ui-tars-local',
             useResponsesApi: true,
           },
@@ -311,7 +311,7 @@ describe('legacy localhost runtime model selection', () => {
         expect.objectContaining({
           model: {
             baseURL: FREE_MODEL_BASE_URL,
-            apiKey: '',
+            apiKey: '', // secretlint-disable-line @secretlint/secretlint-rule-pattern -- intentionally empty because remote flow does not use persisted localhost key
             model: '',
             useResponsesApi: true,
           },

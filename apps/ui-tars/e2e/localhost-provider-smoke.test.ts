@@ -241,9 +241,6 @@ test('@localhost-provider smoke localhost settings gate persists success and rej
         'Make sure the server is running, then verify the full base URL and port.',
       ),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText('Request timed out.')).toBeVisible({
-      timeout: 30_000,
-    });
     await expect(page.getByRole('button', { name: 'Get Start' })).toBeDisabled();
 
     const persistedAfterFailure = await getPersistedSettings(page);

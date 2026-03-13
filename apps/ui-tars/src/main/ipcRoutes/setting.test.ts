@@ -59,7 +59,7 @@ const getFixtureRequests = () => {
 
 const invalidInput = {
   baseUrl: 'localhost:11434/v1',
-  apiKey: '',
+  apiKey: '', // secretlint-disable-line @secretlint/secretlint-rule-pattern -- intentionally empty for invalid localhost input coverage
   modelName: 'ui-tars-1.5-7b',
 };
 
