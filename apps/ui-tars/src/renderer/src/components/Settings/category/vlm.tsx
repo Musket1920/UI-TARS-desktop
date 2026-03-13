@@ -445,7 +445,7 @@ export function VLMSettings({
     submit: async () => {
       return new Promise<VLMSettingsFormValues>((resolve, reject) => {
         form.handleSubmit(
-          (values) => {
+          async (values) => {
             const normalizedValues = normalizeFormValues(values);
 
             if (
@@ -462,7 +462,7 @@ export function VLMSettings({
                 return;
               }
 
-              updateSetting({
+              await updateSetting({
                 ...settings,
                 ...normalizedValues,
                 useResponsesApi: localConnectionTest.result.useResponsesApi,
@@ -471,7 +471,7 @@ export function VLMSettings({
               return;
             }
 
-            updateSetting({
+            await updateSetting({
               ...settings,
               ...normalizedValues,
               useResponsesApi: settings.useResponsesApi,

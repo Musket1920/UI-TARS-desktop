@@ -396,7 +396,7 @@ export default function Settings() {
       return;
     }
 
-    updateSetting({
+    await updateSetting({
       ...settings,
       ...values,
       vlmBaseUrl: values.vlmBaseUrl.trim(),

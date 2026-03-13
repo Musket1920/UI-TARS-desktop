@@ -38,6 +38,8 @@ import {
 } from '../../components/Settings/local';
 import { sleep } from '@ui-tars/shared/utils';
 
+const FRESH_LOCAL_VALIDATION_KEY = 'fresh-local-validation';
+
 const getFinishedContent = (predictionParsed?: PredictionParsed[]) =>
   predictionParsed?.find(
     (step) =>
@@ -50,6 +52,16 @@ const LocalOperator = () => {
   const state = useLocation().state as RouterState;
   const navigate = useNavigate();
   const { setOpen } = useSidebar();
+  const getFreshLocalValidation = () => {
+    const hasSessionFlag =
+      window.sessionStorage.getItem(FRESH_LOCAL_VALIDATION_KEY) === 'true';
+
+    if (hasSessionFlag) {
+      window.sessionStorage.removeItem(FRESH_LOCAL_VALIDATION_KEY);
+    }
+
+    return Boolean(state.allowFreshLocalValidation) || hasSessionFlag;
+  };
 
   const { status, messages = [], thinking, errorMsg } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +80,8 @@ const LocalOperator = () => {
   );
   const [isNavDialogOpen, setNavDialogOpen] = useState(false);
   const [localOpen, setLocalOpen] = useState(false);
+  const [allowFreshLocalValidation, setAllowFreshLocalValidation] =
+    useState(getFreshLocalValidation);
 
   useEffect(() => {
     const update = async () => {
@@ -79,6 +93,10 @@ const LocalOperator = () => {
     update();
     setOpen(false);
   }, [state.sessionId]);
+
+  useEffect(() => {
+    setAllowFreshLocalValidation(getFreshLocalValidation());
+  }, [state.allowFreshLocalValidation, state.sessionId]);
 
   useEffect(() => {
     if (initId !== state.sessionId) {
@@ -193,6 +211,7 @@ const LocalOperator = () => {
 
   const handleLocalSettingsSubmit = async () => {
     setLocalOpen(false);
+    setAllowFreshLocalValidation(true);
 
     await sleep(200);
   };
@@ -202,6 +221,10 @@ const LocalOperator = () => {
   };
 
   const checkVLM = async () => {
+    if (allowFreshLocalValidation) {
+      return true;
+    }
+
     const hasVLM = await checkVLMSettings();
 
     if (hasVLM) {
