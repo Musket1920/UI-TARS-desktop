@@ -453,37 +453,41 @@ export function VLMSettings({
       return new Promise<VLMSettingsFormValues>((resolve, reject) => {
         form.handleSubmit(
           async (values) => {
-            const normalizedValues = normalizeFormValues(values);
+            try {
+              const normalizedValues = normalizeFormValues(values);
 
-            if (
-              normalizedValues.vlmConnectionMode ===
-              VLMConnectionMode.LocalhostOpenAICompatible
-            ) {
               if (
-                !hasCurrentSuccessfulLocalConnectionTest ||
-                !isCurrentLocalConnectionTest ||
-                !localConnectionTest.result
+                normalizedValues.vlmConnectionMode ===
+                VLMConnectionMode.LocalhostOpenAICompatible
               ) {
-                toast.error('Test the localhost connection before continuing.');
-                reject(new Error('Localhost connection test required'));
+                if (
+                  !hasCurrentSuccessfulLocalConnectionTest ||
+                  !isCurrentLocalConnectionTest ||
+                  !localConnectionTest.result
+                ) {
+                  toast.error('Test the localhost connection before continuing.');
+                  reject(new Error('Localhost connection test required'));
+                  return;
+                }
+
+                await updateSetting({
+                  ...settings,
+                  ...normalizedValues,
+                  useResponsesApi: localConnectionTest.result.useResponsesApi,
+                });
+                resolve(normalizedValues);
                 return;
               }
 
               await updateSetting({
                 ...settings,
                 ...normalizedValues,
-                useResponsesApi: localConnectionTest.result.useResponsesApi,
+                useResponsesApi: settings.useResponsesApi,
               });
               resolve(normalizedValues);
-              return;
+            } catch (error) {
+              reject(error);
             }
-
-            await updateSetting({
-              ...settings,
-              ...normalizedValues,
-              useResponsesApi: settings.useResponsesApi,
-            });
-            resolve(normalizedValues);
           },
           (errors) => {
             reject(errors);
