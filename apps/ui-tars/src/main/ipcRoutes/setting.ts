@@ -109,7 +109,7 @@ const getOpenAIClient = (input: VLMCheckInput): OpenAI => {
 
 const buildResponsesProbeRequest = (input: VLMCheckInput): Request => {
   const baseUrl = input.baseUrl.endsWith('/') ? input.baseUrl : `${input.baseUrl}/`;
-  const url = new URL('responses', baseUrl);
+  const url = new URL('/v1/responses', baseUrl);
   const headers = new Headers({
     'content-type': 'application/json',
   });
