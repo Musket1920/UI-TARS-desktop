@@ -322,7 +322,9 @@ describe('settingRoute.testLocalVLMConnection', () => {
       modelAvailable: true,
       useResponsesApi: false,
       errorCode: 'RESPONSES_UNSUPPORTED',
-      errorMessage: expect.stringContaining('404 Not Found'),
+      errorMessage: expect.stringContaining(
+        'No fixture route for POST /v1/responses',
+      ),
     });
     expect(getFixturePaths()).toEqual(['/v1/models', '/v1/responses']);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
