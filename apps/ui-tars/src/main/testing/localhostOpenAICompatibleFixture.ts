@@ -9,6 +9,7 @@ export type LocalhostOpenAICompatibleFixtureState =
   | 'chat-success'
   | 'models-timeout'
   | 'responses-supported'
+  | 'responses-malformed-payload'
   | 'responses-generic-error'
   | 'responses-timeout'
   | 'responses-unsupported'
@@ -232,6 +233,11 @@ const createLocalhostOpenAICompatibleServer = (
       if (path === '/v1/responses') {
         if (state === 'responses-supported') {
           writeResponsesSuccess(response, modelName);
+          return;
+        }
+
+        if (state === 'responses-malformed-payload') {
+          writeMalformedJson(response);
           return;
         }
 

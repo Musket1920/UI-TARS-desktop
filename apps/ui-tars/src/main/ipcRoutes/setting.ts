@@ -422,11 +422,12 @@ export const settingRoute = t.router({
 
         if (!useResponsesApi) {
           return {
-            ok: false,
+            ok: true,
             modelAvailable: true,
             useResponsesApi: false,
-            errorCode: 'UNKNOWN',
-            errorMessage: 'Responses API probe returned an empty response.',
+            errorCode: 'RESPONSES_UNSUPPORTED',
+            errorMessage:
+              'Responses API probe returned an unexpected response. UI-TARS will use chat completions for this connection.',
           } satisfies LocalVLMConnectionTestResult;
         }
 

@@ -393,6 +393,25 @@ describe('settingRoute.testLocalVLMConnection', () => {
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
+  it('falls back to chat completions when /responses returns malformed success payloads', async () => {
+    const result = await settingRoute.testLocalVLMConnection.handle({
+      input: await createFixture('responses-malformed-payload'),
+      context: {} as SettingRouteContext,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      modelAvailable: true,
+      useResponsesApi: false,
+      errorCode: 'RESPONSES_UNSUPPORTED',
+      errorMessage: expect.stringContaining(
+        'Responses API probe returned an unexpected response',
+      ),
+    });
+    expect(getFixturePaths()).toEqual(['/v1/models', '/v1/responses']);
+    expect(settingStoreSetMock).not.toHaveBeenCalled();
+  });
+
   it('falls back to UNKNOWN for malformed localhost payloads without persisting', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
       input: await createFixture('malformed-payload'),
