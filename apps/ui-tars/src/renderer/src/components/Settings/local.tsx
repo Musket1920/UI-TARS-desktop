@@ -8,6 +8,7 @@ import {
 import { Button } from '@renderer/components/ui/button';
 import { VLMConnectionMode } from '@main/store/types';
 import { LocalStore } from '@main/store/validate';
+import { toast } from 'sonner';
 
 import { VLMSettings, VLMSettingsRef } from './category/vlm';
 import { useRef, useState } from 'react';
@@ -16,7 +17,7 @@ export const FRESH_LOCAL_VALIDATION_KEY = 'fresh-local-validation';
 
 interface LocalSettingsDialogProps {
   isOpen: boolean;
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -58,9 +59,13 @@ export const LocalSettingsDialog = ({
   const handleGetStart = async () => {
     try {
       await vlmSettingsRef.current?.submit();
-      onSubmit();
+      await onSubmit();
     } catch (error) {
       console.error('Failed to submit settings:', error);
+      toast.error('Failed to start with these settings', {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      });
     }
   };
 

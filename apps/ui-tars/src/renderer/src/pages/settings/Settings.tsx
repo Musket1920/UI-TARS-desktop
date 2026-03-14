@@ -247,8 +247,9 @@ export default function Settings() {
     sectionRefs.current[section]?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const [vlmConnectionMode, vlmBaseUrl, vlmApiKey, vlmModelName] = form.watch([
+  const [vlmConnectionMode, vlmProvider, vlmBaseUrl, vlmApiKey, vlmModelName] = form.watch([
     'vlmConnectionMode',
+    'vlmProvider',
     'vlmBaseUrl',
     'vlmApiKey',
     'vlmModelName',
@@ -274,7 +275,8 @@ export default function Settings() {
     localConnectionTest.snapshot !== null && !isCurrentLocalConnectionTest;
   const canSaveLocalhostMode =
     hasCurrentSuccessfulLocalConnectionTest &&
-    localConnectionTest.status !== 'testing';
+    localConnectionTest.status !== 'testing' &&
+    Boolean(vlmProvider);
   const saveDisabled =
     form.formState.isSubmitting ||
     (isLocalhostMode && !canSaveLocalhostMode) ||

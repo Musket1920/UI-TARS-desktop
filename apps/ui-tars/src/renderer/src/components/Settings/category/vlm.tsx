@@ -234,7 +234,9 @@ export function VLMSettings({
       currentFormValues.vlmModelName.length > 0,
   );
   const canSubmit = isLocalhostMode
-    ? !isRemoteAutoUpdatedPreset && hasCurrentSuccessfulLocalConnectionTest
+    ? !isRemoteAutoUpdatedPreset &&
+      hasCurrentSuccessfulLocalConnectionTest &&
+      Boolean(currentFormValues.vlmProvider)
     : canSubmitManagedMode;
 
   useEffect(() => {

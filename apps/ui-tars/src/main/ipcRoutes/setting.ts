@@ -90,7 +90,10 @@ const buildOpenAIConfig = (
 ): OpenAIConfig => {
   const config: OpenAIConfig = {
     baseURL,
-    apiKey: apiKeyValue.length > 0 ? apiKeyValue : 'localhost-no-auth',
+    apiKey:
+      apiKeyValue.length > 0
+        ? apiKeyValue
+        : 'localhost-no-auth-token', // secretlint-disable-line @secretlint/secretlint-rule-pattern -- placeholder required by OpenAI SDK when auth is intentionally omitted
   };
 
   if (apiKeyValue.length === 0) {
