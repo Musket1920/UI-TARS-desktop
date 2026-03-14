@@ -418,13 +418,18 @@ export function VLMSettings({
           areLocalConnectionSnapshotsEqual(
             snapshot,
             normalizeLocalConnectionSnapshot(nextValues),
-          )
+          ) &&
+          Boolean(nextValues.vlmProvider)
         ) {
-          updateSetting({
-            ...settings,
-            ...nextValues,
-            useResponsesApi: result.useResponsesApi,
-          });
+          try {
+            await updateSetting({
+              ...settings,
+              ...nextValues,
+              useResponsesApi: result.useResponsesApi,
+            });
+          } catch (error) {
+            console.error('Failed to autosave localhost VLM settings', error);
+          }
         }
       }
     } catch (error) {
