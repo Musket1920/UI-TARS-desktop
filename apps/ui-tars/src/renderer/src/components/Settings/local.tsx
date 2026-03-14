@@ -42,7 +42,7 @@ export const checkVLMSettings = async () => {
     (vlmConnectionMode ?? VLMConnectionMode.Managed) ===
     VLMConnectionMode.LocalhostOpenAICompatible
   ) {
-    return false;
+    return Boolean(vlmBaseUrl) && Boolean(vlmModelName) && Boolean(vlmProvider);
   }
 
   return Boolean(vlmApiKey);

@@ -173,7 +173,7 @@ describe('settingRoute.checkModelAvailability', () => {
         input,
         context: {} as SettingRouteContext,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
     expect(getFixturePaths()).toEqual(['/v1/models']);
   });
 
@@ -311,20 +311,20 @@ describe('settingRoute.testLocalVLMConnection', () => {
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 
-  it('falls back to UNKNOWN when /v1/models returns an empty list', async () => {
+  it('falls back to chat completions when /v1/models returns an empty list', async () => {
     const result = await settingRoute.testLocalVLMConnection.handle({
       input: await createEmptyModelsFixture(),
       context: {} as SettingRouteContext,
     });
 
     expect(result).toEqual({
-      ok: false,
-      modelAvailable: false,
+      ok: true,
+      modelAvailable: true,
       useResponsesApi: false,
-      errorCode: 'UNKNOWN',
-      errorMessage: 'Model availability probe returned an empty response.',
+      errorCode: 'RESPONSES_UNSUPPORTED',
+      errorMessage: expect.stringContaining('404 Not Found'),
     });
-    expect(getFixturePaths()).toEqual(['/v1/models']);
+    expect(getFixturePaths()).toEqual(['/v1/models', '/v1/responses']);
     expect(settingStoreSetMock).not.toHaveBeenCalled();
   });
 

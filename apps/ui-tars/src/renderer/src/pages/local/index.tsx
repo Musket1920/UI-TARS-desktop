@@ -87,9 +87,7 @@ const LocalOperator = () => {
   const [lastValidatedLocalSnapshot, setLastValidatedLocalSnapshot] =
     useState<LocalConnectionSnapshot | null>(null);
   const [allowFreshLocalValidation, setAllowFreshLocalValidation] =
-    useState(() => {
-      return Boolean(state.allowFreshLocalValidation) || consumeFreshLocalValidationFlag();
-    });
+    useState(() => Boolean(state.allowFreshLocalValidation));
 
   useEffect(() => {
     const update = async () => {

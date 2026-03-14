@@ -303,7 +303,7 @@ const probeModelAvailability = async (
   const models = await openai.models.list(requestOptions);
 
   if (models.data.length === 0) {
-    return false;
+    return true;
   }
 
   if (!models.data.some((model) => model.id === input.modelName)) {
