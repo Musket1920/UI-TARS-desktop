@@ -180,7 +180,7 @@ export class SettingStore {
       const managedSettings = hydratePresetAsManagedSettings(validatedPreset);
 
       SettingStore.setStore({
-        ...enforceAgentSSafetyPolicy(managedSettings),
+        ...managedSettings,
         presetSource: {
           type: 'remote',
           url,

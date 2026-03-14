@@ -88,8 +88,17 @@ const buildOpenAIConfig = (
   baseURL: string,
   apiKeyValue: string,
 ): OpenAIConfig => {
-  const config = { baseURL } as OpenAIConfig;
-  (config as Record<string, unknown>)['apiKey'] = apiKeyValue;
+  const config: OpenAIConfig = {
+    baseURL,
+    apiKey: apiKeyValue.length > 0 ? apiKeyValue : 'localhost-no-auth',
+  };
+
+  if (apiKeyValue.length === 0) {
+    config.defaultHeaders = {
+      Authorization: null,
+    };
+  }
+
   return config;
 };
 
