@@ -97,6 +97,28 @@ const getOpenAIClient = (input: VLMCheckInput): OpenAI => {
   return new OpenAI(buildOpenAIConfig(input.baseUrl, input.apiKey));
 };
 
+const buildResponsesProbeRequest = (input: VLMCheckInput): Request => {
+  const baseUrl = input.baseUrl.endsWith('/') ? input.baseUrl : `${input.baseUrl}/`;
+  const url = new URL('responses', baseUrl);
+  const headers = new Headers({
+    'content-type': 'application/json',
+  });
+
+  if (input.apiKey.length > 0) {
+    headers.set('authorization', `Bearer ${input.apiKey}`);
+  }
+
+  return new Request(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: input.modelName,
+      input: 'ping',
+      stream: true,
+    }),
+  });
+};
+
 const createProbeTimeoutError = (probeName: string): Error => {
   return new Error(
     `Localhost ${probeName} probe timed out after ${PROBE_TIMEOUT_MS}ms.`,
@@ -285,17 +307,19 @@ const probeResponsesApiSupport = async (
   input: VLMCheckInput,
   requestOptions: ProbeRequestOptions = PROBE_REQUEST_OPTIONS,
 ): Promise<boolean> => {
-  const openai = getOpenAIClient(input);
-  const result = await openai.responses.create(
-    {
-      model: input.modelName,
-      input: 'return 1+1=?',
-      stream: false,
-    },
-    requestOptions,
-  );
+  const request = buildResponsesProbeRequest(input);
+  const response = await fetch(request, {
+    signal: requestOptions.signal,
+  });
 
-  return Boolean(result?.id || result?.previous_response_id);
+  if (response.ok) {
+    return true;
+  }
+
+  const errorBody = await response.text();
+  throw Object.assign(new Error(errorBody || response.statusText), {
+    status: response.status,
+  });
 };
 
 export const settingRoute = t.router({
