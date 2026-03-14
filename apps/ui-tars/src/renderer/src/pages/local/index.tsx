@@ -103,10 +103,11 @@ const LocalOperator = () => {
   useEffect(() => {
     const hasSessionFlag = consumeFreshLocalValidationFlag();
 
-    if (state.allowFreshLocalValidation || hasSessionFlag) {
+    if (hasSessionFlag) {
       setAllowFreshLocalValidation(true);
     }
-  }, [state.allowFreshLocalValidation, state.sessionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (initId !== state.sessionId) {

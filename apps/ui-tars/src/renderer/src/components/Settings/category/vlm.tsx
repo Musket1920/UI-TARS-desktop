@@ -71,7 +71,7 @@ const formSchema = z.object({
   vlmApiKey: z.string(),
   vlmModelName: z.string().trim().min(1, 'Enter the VLM model name.'),
 }).superRefine((data, ctx) => {
-  if (!isValidHttpUrl(data.vlmBaseUrl)) {
+  if (data.vlmBaseUrl.trim().length > 0 && !isValidHttpUrl(data.vlmBaseUrl)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: `Enter a full http(s) URL, for example ${LOCALHOST_BASE_URL_HINT}.`,
