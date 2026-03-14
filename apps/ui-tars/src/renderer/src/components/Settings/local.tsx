@@ -12,6 +12,8 @@ import { LocalStore } from '@main/store/validate';
 import { VLMSettings, VLMSettingsRef } from './category/vlm';
 import { useRef, useState } from 'react';
 
+export const FRESH_LOCAL_VALIDATION_KEY = 'fresh-local-validation';
+
 interface LocalSettingsDialogProps {
   isOpen: boolean;
   onSubmit: () => void;

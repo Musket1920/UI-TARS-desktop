@@ -21,6 +21,7 @@ import { Operator } from '@main/store/types';
 import { useSession } from '../../hooks/useSession';
 import {
   checkVLMSettings,
+  FRESH_LOCAL_VALIDATION_KEY,
   LocalSettingsDialog,
 } from '@renderer/components/Settings/local';
 
@@ -31,8 +32,6 @@ import { sleep } from '@ui-tars/shared/utils';
 import { FreeTrialDialog } from '../../components/AlertDialog/freeTrialDialog';
 import { DragArea } from '../../components/Common/drag';
 import { OPERATOR_URL_MAP } from '../../const';
-
-const FRESH_LOCAL_VALIDATION_KEY = 'fresh-local-validation';
 
 const Home = () => {
   const navigate = useNavigate();

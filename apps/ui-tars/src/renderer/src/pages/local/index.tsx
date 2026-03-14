@@ -34,11 +34,10 @@ import ChatInput from '../../components/ChatInput';
 import { NavDialog } from '../../components/AlertDialog/navDialog';
 import {
   checkVLMSettings,
+  FRESH_LOCAL_VALIDATION_KEY,
   LocalSettingsDialog,
 } from '../../components/Settings/local';
 import { sleep } from '@ui-tars/shared/utils';
-
-const FRESH_LOCAL_VALIDATION_KEY = 'fresh-local-validation';
 
 const getFinishedContent = (predictionParsed?: PredictionParsed[]) =>
   predictionParsed?.find(

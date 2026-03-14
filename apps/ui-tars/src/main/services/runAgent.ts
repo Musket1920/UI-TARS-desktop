@@ -491,7 +491,7 @@ export const runAgent = async (
     }
 
     // Legacy fallback path: neither Agent-S runtime was attempted nor succeeded
-    let modelVersion = getModelVersion(settings.vlmProvider);
+    let modelVersion = getModelVersion(settings.vlmProvider || undefined);
     let modelConfig: UITarsModelConfig = {
       baseURL: settings.vlmBaseUrl,
       apiKey: settings.vlmApiKey, // secretlint-disable-line @secretlint/secretlint-rule-pattern -- config field name, value comes from settings

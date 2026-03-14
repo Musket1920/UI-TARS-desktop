@@ -145,6 +145,18 @@ describe('SettingStore', () => {
     expect(DEFAULT_SETTING.useResponsesApi).toBe(false);
   });
 
+  it('accepts the default managed store through setStore', async () => {
+    const { DEFAULT_SETTING, SettingStore } = await import('./setting');
+
+    expect(() => SettingStore.setStore(DEFAULT_SETTING)).not.toThrow();
+    expect(electronStoreSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...DEFAULT_SETTING,
+        agentSTurnTimeoutMs: AGENT_S_SAFE_DEFAULT_TURN_TIMEOUT_MS,
+      }),
+    );
+  });
+
   it('rewrites unsafe persisted Agent-S loop intervals to the dedicated safe floor', async () => {
     const { SettingStore } = await import('./setting');
 

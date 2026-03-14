@@ -171,6 +171,18 @@ describe('validateLocalStore schema for localhost connection mode', () => {
     expect(validated.useResponsesApi).toBe(false);
   });
 
+  it('accepts managed defaults with empty localhost fields', () => {
+    const validated = validateLocalStore({
+      operator: Operator.LocalComputer,
+      vlmBaseUrl: '',
+      vlmApiKey: 'test-api-key',
+      vlmModelName: '',
+    });
+
+    expect(validated.vlmBaseUrl).toBe('');
+    expect(validated.vlmModelName).toBe('');
+  });
+
   it('rejects managed mode when the API key is blank', () => {
     expect(() =>
       validateLocalStore({
@@ -232,4 +244,16 @@ describe('validateLocalStore schema for localhost connection mode', () => {
       ).toThrow(/legacy UI-TARS local operators/);
     },
   );
+
+  it('rejects localhost mode when the base URL or model name are blank', () => {
+    expect(() =>
+      validateLocalStore({
+        ...baseLocalStore(),
+        vlmConnectionMode: VLMConnectionMode.LocalhostOpenAICompatible,
+        vlmBaseUrl: '',
+        vlmApiKey: '',
+        vlmModelName: '',
+      }),
+    ).toThrow(/vlmBaseUrl|vlmModelName/);
+  });
 });

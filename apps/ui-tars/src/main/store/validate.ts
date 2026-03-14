@@ -19,7 +19,11 @@ import {
   AgentSSidecarMode,
 } from './types';
 
-const OptionalUrlOrEmptyStringSchema = z.union([z.literal(''), z.string().url()]).optional();
+const OptionalUrlOrEmptyStringSchema = z
+  .union([z.literal(''), z.string().url()])
+  .optional();
+const UrlOrEmptyStringSchema = z.union([z.literal(''), z.string().url()]);
+const NonEmptyStringOrEmptySchema = z.union([z.literal(''), z.string().min(1)]);
 
 const PresetSourceSchema = z.object({
   type: z.enum(['local', 'remote']),
@@ -65,15 +69,29 @@ const ManagedVLMSettingsSchema = z.object({
 });
 
 const LocalStoreVLMSettingsSchema = z.object({
-  vlmProvider: z.nativeEnum(VLMProviderV2).optional(),
-  vlmBaseUrl: z.string().url(),
+  vlmProvider: z.union([z.literal(''), z.nativeEnum(VLMProviderV2)]).optional(),
+  vlmBaseUrl: UrlOrEmptyStringSchema,
   vlmApiKey: z.string().default(''),
-  vlmModelName: z.string().min(1),
+  vlmModelName: NonEmptyStringOrEmptySchema,
   useResponsesApi: z.boolean().default(false),
 });
 
 const usesManagedVLMConnectionMode = (mode: VLMConnectionMode): boolean => {
   return mode === VLMConnectionMode.Managed;
+};
+
+const hasConfiguredManagedVLMFields = (data: {
+  vlmProvider?: VLMProviderV2 | '';
+  vlmBaseUrl: string;
+  vlmApiKey: string;
+  vlmModelName: string;
+}): boolean => {
+  return (
+    (data.vlmProvider !== undefined && data.vlmProvider !== '') ||
+    data.vlmBaseUrl.length > 0 ||
+    data.vlmApiKey.length > 0 ||
+    data.vlmModelName.length > 0
+  );
 };
 
 const usesLegacyUITARSEngineMode = (engineMode?: EngineMode): boolean => {
@@ -102,7 +120,37 @@ export const LocalStoreSchema = CommonSettingsSchema.extend({
   ...LocalStoreVLMSettingsSchema.shape,
   presetSource: PresetSourceSchema.optional(),
 }).superRefine((data, ctx) => {
-  if (usesManagedVLMConnectionMode(data.vlmConnectionMode) && data.vlmApiKey.length === 0) {
+  if (
+    data.vlmConnectionMode === VLMConnectionMode.LocalhostOpenAICompatible &&
+    data.vlmBaseUrl.length === 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.too_small,
+      minimum: 1,
+      inclusive: true,
+      path: ['vlmBaseUrl'],
+      type: 'string',
+    });
+  }
+
+  if (
+    data.vlmConnectionMode === VLMConnectionMode.LocalhostOpenAICompatible &&
+    data.vlmModelName.length === 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.too_small,
+      minimum: 1,
+      inclusive: true,
+      path: ['vlmModelName'],
+      type: 'string',
+    });
+  }
+
+  if (
+    usesManagedVLMConnectionMode(data.vlmConnectionMode) &&
+    hasConfiguredManagedVLMFields(data) &&
+    data.vlmApiKey.length === 0
+  ) {
     ctx.addIssue({
       code: z.ZodIssueCode.too_small,
       minimum: 1,

@@ -70,7 +70,9 @@ export const getLocalConnectionFeedback = (
   title: string;
   description: string;
 } => {
-  switch (result.errorCode) {
+  const errorCode = result.errorCode;
+
+  switch (errorCode) {
     case 'INVALID_URL':
       return {
         tone: 'error',
@@ -106,12 +108,21 @@ export const getLocalConnectionFeedback = (
           result.errorMessage ??
           'The localhost server returned an unexpected response.',
       };
-    default:
+    case null:
       return {
         tone: 'success',
         title: 'Connected to localhost',
         description:
           'The model responded successfully and the Responses API is available.',
       };
+    default: {
+      const exhaustiveCheck: never = errorCode;
+      void exhaustiveCheck;
+      return {
+        tone: 'error',
+        title: 'Unknown feedback state',
+        description: 'An unsupported localhost connection result was received.',
+      };
+    }
   }
 };
