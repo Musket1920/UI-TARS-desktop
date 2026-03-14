@@ -223,15 +223,6 @@ const LocalOperator = () => {
     setLocalOpen(false);
     setAllowFreshLocalValidation(true);
 
-    const currentSetting = await window.electron.setting.getSetting();
-    setLastValidatedLocalSnapshot(
-      normalizeLocalConnectionSnapshot({
-        vlmBaseUrl: currentSetting.vlmBaseUrl ?? '',
-        vlmApiKey: currentSetting.vlmApiKey ?? '',
-        vlmModelName: currentSetting.vlmModelName ?? '',
-      }),
-    );
-
     await sleep(200);
   };
 

@@ -121,12 +121,12 @@ const buildResponsesProbeRequest = (input: VLMCheckInput): Request => {
   return new Request(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model: input.modelName,
-      input: 'ping',
-      stream: true,
-    }),
-  });
+      body: JSON.stringify({
+        model: input.modelName,
+        input: 'ping',
+        stream: false,
+      }),
+    });
 };
 
 const createProbeTimeoutError = (probeName: string): Error => {

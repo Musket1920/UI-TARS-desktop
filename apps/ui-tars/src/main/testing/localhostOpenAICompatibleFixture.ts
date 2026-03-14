@@ -7,6 +7,7 @@ import { createServer as createNetServer, type Socket } from 'node:net';
 
 export type LocalhostOpenAICompatibleFixtureState =
   | 'chat-success'
+  | 'empty-models'
   | 'models-timeout'
   | 'responses-supported'
   | 'responses-malformed-payload'
@@ -210,7 +211,11 @@ const createLocalhostOpenAICompatibleServer = (
 
         writeModelsSuccess(
           response,
-          state === 'invalid-model' ? [`${modelName}-available`] : [modelName],
+          state === 'empty-models'
+            ? []
+            : state === 'invalid-model'
+              ? [`${modelName}-available`]
+              : [modelName],
         );
         return;
       }
@@ -270,6 +275,15 @@ const createLocalhostOpenAICompatibleServer = (
             '501 Not Implemented for POST /responses in chat-success mode',
             501,
           );
+          return;
+        }
+
+        if (state === 'empty-models') {
+          writeJson(response, 404, {
+            error: {
+              message: `No fixture route for ${method} ${path}`,
+            },
+          });
           return;
         }
 
