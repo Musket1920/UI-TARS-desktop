@@ -340,7 +340,11 @@ const probeResponsesApiSupport = async (
         typeof body.id === 'string' ||
         typeof body.previous_response_id === 'string'
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
+
       return false;
     }
   }

@@ -157,7 +157,7 @@ export class SettingStore {
   }
 
   public static clear(): void {
-    SettingStore.getInstance().set(enforceAgentSSafetyPolicy(DEFAULT_SETTING));
+    SettingStore.setStore(DEFAULT_SETTING);
   }
 
   public static openInEditor(): void {
@@ -223,7 +223,5 @@ export class SettingStore {
 async function parsePresetYaml(yamlContent: string): Promise<LocalStore> {
   const preset = yaml.load(yamlContent);
   const validatedPreset = validatePreset(preset);
-  return enforceAgentSSafetyPolicy(
-    hydratePresetAsManagedSettings(validatedPreset),
-  );
+  return hydratePresetAsManagedSettings(validatedPreset);
 }
