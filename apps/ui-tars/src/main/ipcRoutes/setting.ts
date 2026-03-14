@@ -108,8 +108,8 @@ const getOpenAIClient = (input: VLMCheckInput): OpenAI => {
 };
 
 const buildResponsesProbeRequest = (input: VLMCheckInput): Request => {
-  const baseUrl = input.baseUrl.endsWith('/') ? input.baseUrl : `${input.baseUrl}/`;
-  const url = new URL('/v1/responses', baseUrl);
+  const normalizedBaseUrl = input.baseUrl.replace(/\/?$/, '/');
+  const url = new URL(`${normalizedBaseUrl}responses`);
   const headers = new Headers({
     'content-type': 'application/json',
   });
@@ -121,12 +121,12 @@ const buildResponsesProbeRequest = (input: VLMCheckInput): Request => {
   return new Request(url, {
     method: 'POST',
     headers,
-      body: JSON.stringify({
-        model: input.modelName,
-        input: 'ping',
-        stream: false,
-      }),
-    });
+    body: JSON.stringify({
+      model: input.modelName,
+      input: 'ping',
+      stream: false,
+    }),
+  });
 };
 
 const createProbeTimeoutError = (probeName: string): Error => {
@@ -394,19 +394,10 @@ export const settingRoute = t.router({
       }
 
       try {
-        const modelAvailable = await withProbeTimeout(
+        await withProbeTimeout(
           'model availability',
           (requestOptions) => probeModelAvailability(input, requestOptions),
         );
-        if (!modelAvailable) {
-          return {
-            ok: false,
-            modelAvailable: false,
-            useResponsesApi: false,
-            errorCode: 'UNKNOWN',
-            errorMessage: 'Model availability probe returned an empty response.',
-          } satisfies LocalVLMConnectionTestResult;
-        }
       } catch (error) {
         logger.warn('[testLocalVLMConnection] model probe failed:', error);
         return {

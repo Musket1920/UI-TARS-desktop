@@ -3,9 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { api } from '@renderer/api';
-
 export const LOCALHOST_BASE_URL_HINT = 'http://127.0.0.1:11434/v1';
+
+export type LocalConnectionErrorCode =
+  | 'INVALID_URL'
+  | 'UNREACHABLE'
+  | 'MODEL_NOT_FOUND'
+  | 'RESPONSES_UNSUPPORTED'
+  | 'UNKNOWN';
+
+export type LocalConnectionTestResult = {
+  ok: boolean;
+  modelAvailable: boolean;
+  useResponsesApi: boolean;
+  errorCode: LocalConnectionErrorCode | null;
+  errorMessage: string | null;
+};
 
 type LocalConnectionFormValues = {
   vlmBaseUrl: string;
@@ -18,10 +31,6 @@ export type LocalConnectionSnapshot = {
   apiKey: string; // secretlint-disable-line @secretlint/secretlint-rule-pattern -- settings snapshot field name only
   modelName: string;
 };
-
-export type LocalConnectionTestResult = Awaited<
-  ReturnType<typeof api.testLocalVLMConnection>
->;
 
 export type LocalConnectionTestState = {
   status: 'idle' | 'testing' | 'completed';
