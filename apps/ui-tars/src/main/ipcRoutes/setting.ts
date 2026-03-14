@@ -313,7 +313,26 @@ const probeResponsesApiSupport = async (
   });
 
   if (response.ok) {
-    return true;
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (contentType.includes('text/event-stream')) {
+      await response.body?.cancel().catch(() => undefined);
+      return true;
+    }
+
+    try {
+      const body = (await response.json()) as {
+        id?: unknown;
+        previous_response_id?: unknown;
+      };
+
+      return (
+        typeof body.id === 'string' ||
+        typeof body.previous_response_id === 'string'
+      );
+    } catch {
+      return false;
+    }
   }
 
   const errorBody = await response.text();
