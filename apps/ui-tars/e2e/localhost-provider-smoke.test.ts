@@ -216,7 +216,7 @@ test('@localhost-provider smoke localhost settings gate persists success and rej
   const { electronApp, page } = await launchApp();
 
   try {
-    await page.waitForLoadState('domcontentloaded', { timeout: 0 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 60_000 });
     await installSmokeHarness(electronApp);
     await clearPersistedSettings(page);
 
