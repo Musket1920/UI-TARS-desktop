@@ -34,18 +34,18 @@ export const checkVLMSettings = async () => {
     vlmProvider,
   } = currentSetting;
 
-  if (!vlmBaseUrl || !vlmModelName || !vlmProvider) {
-    return false;
-  }
+  const connectionMode = vlmConnectionMode ?? VLMConnectionMode.Managed;
 
-  if (
-    (vlmConnectionMode ?? VLMConnectionMode.Managed) ===
-    VLMConnectionMode.LocalhostOpenAICompatible
-  ) {
+  if (connectionMode === VLMConnectionMode.LocalhostOpenAICompatible) {
     return Boolean(vlmBaseUrl) && Boolean(vlmModelName) && Boolean(vlmProvider);
   }
 
-  return Boolean(vlmApiKey);
+  return (
+    Boolean(vlmBaseUrl) &&
+    Boolean(vlmModelName) &&
+    Boolean(vlmProvider) &&
+    Boolean(vlmApiKey)
+  );
 };
 
 export const LocalSettingsDialog = ({

@@ -771,6 +771,9 @@ export function VLMSettings({
                             .
                           </p>
                         )}
+                        {localConnectionTest.result.ok && !currentFormValues.vlmProvider && (
+                          <p>Select a VLM provider to enable Get Start.</p>
+                        )}
                         {!localConnectionTest.result.ok &&
                           localConnectionTest.result.errorMessage &&
                           localConnectionTest.result.errorCode !== 'INVALID_URL' && (

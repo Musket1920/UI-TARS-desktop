@@ -176,6 +176,7 @@ const LocalOperator = () => {
         operator: state.operator,
         sessionId: session?.id,
         from: 'new',
+        allowFreshLocalValidation: true,
       },
     });
   }, []);
