@@ -22,7 +22,12 @@ import {
 } from '@ui-tars/operator-browser';
 import { showPredictionMarker } from '@main/window/ScreenMarker';
 import { SettingStore } from '@main/store/setting';
-import { AppState, EngineMode, Operator } from '@main/store/types';
+import {
+  AppState,
+  EngineMode,
+  Operator,
+  VLMConnectionMode,
+} from '@main/store/types';
 import { GUIAgentManager } from '../ipcRoutes/agent';
 import { checkBrowserAvailability } from './browserCheck';
 import {
@@ -314,6 +319,17 @@ export const runAgent = async (
   };
 
   try {
+    const usesUnsupportedAgentSLocalhostMode =
+      settings.vlmConnectionMode ===
+        VLMConnectionMode.LocalhostOpenAICompatible &&
+      settings.engineMode === EngineMode.AgentS;
+
+    if (usesUnsupportedAgentSLocalhostMode) {
+      throw new Error(
+        '`localhost-openai-compatible` is only supported for legacy UI-TARS local operators',
+      );
+    }
+
     const initializedOperator = await initializeOperator();
     if (!initializedOperator) {
       return;
@@ -475,7 +491,7 @@ export const runAgent = async (
     }
 
     // Legacy fallback path: neither Agent-S runtime was attempted nor succeeded
-    let modelVersion = getModelVersion(settings.vlmProvider);
+    let modelVersion = getModelVersion(settings.vlmProvider || undefined);
     let modelConfig: UITarsModelConfig = {
       baseURL: settings.vlmBaseUrl,
       apiKey: settings.vlmApiKey, // secretlint-disable-line @secretlint/secretlint-rule-pattern -- config field name, value comes from settings

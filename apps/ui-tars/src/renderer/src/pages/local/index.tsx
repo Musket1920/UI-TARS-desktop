@@ -34,8 +34,14 @@ import ChatInput from '../../components/ChatInput';
 import { NavDialog } from '../../components/AlertDialog/navDialog';
 import {
   checkVLMSettings,
+  FRESH_LOCAL_VALIDATION_KEY,
   LocalSettingsDialog,
 } from '../../components/Settings/local';
+import {
+  type LocalConnectionSnapshot,
+  areLocalConnectionSnapshotsEqual,
+  normalizeLocalConnectionSnapshot,
+} from '../../components/Settings/localhost';
 import { sleep } from '@ui-tars/shared/utils';
 
 const getFinishedContent = (predictionParsed?: PredictionParsed[]) =>
@@ -50,6 +56,16 @@ const LocalOperator = () => {
   const state = useLocation().state as RouterState;
   const navigate = useNavigate();
   const { setOpen } = useSidebar();
+  const consumeFreshLocalValidationFlag = () => {
+    const hasSessionFlag =
+      window.sessionStorage.getItem(FRESH_LOCAL_VALIDATION_KEY) === 'true';
+
+    if (hasSessionFlag) {
+      window.sessionStorage.removeItem(FRESH_LOCAL_VALIDATION_KEY);
+    }
+
+    return hasSessionFlag;
+  };
 
   const { status, messages = [], thinking, errorMsg } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +84,10 @@ const LocalOperator = () => {
   );
   const [isNavDialogOpen, setNavDialogOpen] = useState(false);
   const [localOpen, setLocalOpen] = useState(false);
+  const [lastValidatedLocalSnapshot, setLastValidatedLocalSnapshot] =
+    useState<LocalConnectionSnapshot | null>(null);
+  const [allowFreshLocalValidation, setAllowFreshLocalValidation] =
+    useState(() => Boolean(state.allowFreshLocalValidation));
 
   useEffect(() => {
     const update = async () => {
@@ -79,6 +99,15 @@ const LocalOperator = () => {
     update();
     setOpen(false);
   }, [state.sessionId]);
+
+  useEffect(() => {
+    const hasSessionFlag = consumeFreshLocalValidationFlag();
+
+    if (hasSessionFlag) {
+      setAllowFreshLocalValidation(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (initId !== state.sessionId) {
@@ -193,6 +222,7 @@ const LocalOperator = () => {
 
   const handleLocalSettingsSubmit = async () => {
     setLocalOpen(false);
+    setAllowFreshLocalValidation(true);
 
     await sleep(200);
   };
@@ -202,6 +232,34 @@ const LocalOperator = () => {
   };
 
   const checkVLM = async () => {
+    if (allowFreshLocalValidation) {
+      setAllowFreshLocalValidation(false);
+
+      const currentSetting = await window.electron.setting.getSetting();
+      setLastValidatedLocalSnapshot(
+        normalizeLocalConnectionSnapshot({
+          vlmConnectionMode: currentSetting.vlmConnectionMode,
+          vlmBaseUrl: currentSetting.vlmBaseUrl ?? '',
+          vlmApiKey: currentSetting.vlmApiKey ?? '',
+          vlmModelName: currentSetting.vlmModelName ?? '',
+        }),
+      );
+
+      return true;
+    }
+
+    const currentSetting = await window.electron.setting.getSetting();
+    const currentSnapshot = normalizeLocalConnectionSnapshot({
+      vlmConnectionMode: currentSetting.vlmConnectionMode,
+      vlmBaseUrl: currentSetting.vlmBaseUrl ?? '',
+      vlmApiKey: currentSetting.vlmApiKey ?? '',
+      vlmModelName: currentSetting.vlmModelName ?? '',
+    });
+
+    if (areLocalConnectionSnapshotsEqual(lastValidatedLocalSnapshot, currentSnapshot)) {
+      return true;
+    }
+
     const hasVLM = await checkVLMSettings();
 
     if (hasVLM) {

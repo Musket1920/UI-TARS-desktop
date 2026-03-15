@@ -5,4 +5,5 @@ export interface RouterState {
   sessionId: string;
   isFree?: boolean;
   from: 'home' | 'new' | 'history';
+  allowFreshLocalValidation?: boolean;
 }

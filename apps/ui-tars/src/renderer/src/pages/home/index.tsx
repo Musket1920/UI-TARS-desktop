@@ -21,6 +21,7 @@ import { Operator } from '@main/store/types';
 import { useSession } from '../../hooks/useSession';
 import {
   checkVLMSettings,
+  FRESH_LOCAL_VALIDATION_KEY,
   LocalSettingsDialog,
 } from '@renderer/components/Settings/local';
 
@@ -105,7 +106,10 @@ const Home = () => {
   };
 
   /** local click logic start */
-  const toLocal = async (operator: Operator) => {
+  const toLocal = async (
+    operator: Operator,
+    allowFreshLocalValidation = false,
+  ) => {
     const session = await createSession('New Session', {
       operator: operator,
     });
@@ -115,6 +119,7 @@ const Home = () => {
         operator: operator,
         sessionId: session?.id,
         from: 'home',
+        allowFreshLocalValidation,
       },
     });
   };
@@ -143,10 +148,11 @@ const Home = () => {
 
   const handleLocalSettingsSubmit = async () => {
     setLocalConfig({ open: false, operator: localConfig.operator });
+    window.sessionStorage.setItem(FRESH_LOCAL_VALIDATION_KEY, 'true');
 
     await sleep(200);
 
-    await toLocal(localConfig.operator);
+    await toLocal(localConfig.operator, true);
   };
 
   const handleLocalSettingsClose = () => {

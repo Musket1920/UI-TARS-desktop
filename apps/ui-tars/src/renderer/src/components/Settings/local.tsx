@@ -6,14 +6,18 @@ import {
   DialogTitle,
 } from '@renderer/components/ui/dialog';
 import { Button } from '@renderer/components/ui/button';
+import { VLMConnectionMode } from '@main/store/types';
 import { LocalStore } from '@main/store/validate';
+import { toast } from 'sonner';
 
 import { VLMSettings, VLMSettingsRef } from './category/vlm';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+
+export const FRESH_LOCAL_VALIDATION_KEY = 'fresh-local-validation';
 
 interface LocalSettingsDialogProps {
   isOpen: boolean;
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -22,13 +26,26 @@ export const checkVLMSettings = async () => {
 
   const currentSetting = ((await settingRpc.getSetting()) ||
     {}) as Partial<LocalStore>;
-  const { vlmApiKey, vlmBaseUrl, vlmModelName, vlmProvider } = currentSetting;
+  const {
+    vlmConnectionMode,
+    vlmApiKey,
+    vlmBaseUrl,
+    vlmModelName,
+    vlmProvider,
+  } = currentSetting;
 
-  if (vlmApiKey && vlmBaseUrl && vlmModelName && vlmProvider) {
-    return true;
+  const connectionMode = vlmConnectionMode ?? VLMConnectionMode.Managed;
+
+  if (connectionMode === VLMConnectionMode.LocalhostOpenAICompatible) {
+    return Boolean(vlmBaseUrl) && Boolean(vlmModelName) && Boolean(vlmProvider);
   }
 
-  return false;
+  return (
+    Boolean(vlmBaseUrl) &&
+    Boolean(vlmModelName) &&
+    Boolean(vlmProvider) &&
+    Boolean(vlmApiKey)
+  );
 };
 
 export const LocalSettingsDialog = ({
@@ -37,13 +54,18 @@ export const LocalSettingsDialog = ({
   onClose,
 }: LocalSettingsDialogProps) => {
   const vlmSettingsRef = useRef<VLMSettingsRef>(null);
+  const [canStart, setCanStart] = useState(false);
 
   const handleGetStart = async () => {
     try {
       await vlmSettingsRef.current?.submit();
-      onSubmit();
+      await onSubmit();
     } catch (error) {
       console.error('Failed to submit settings:', error);
+      toast.error('Failed to start with these settings', {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      });
     }
   };
 
@@ -57,8 +79,11 @@ export const LocalSettingsDialog = ({
             or browser.
           </DialogDescription>
         </DialogHeader>
-        <VLMSettings ref={vlmSettingsRef} />
-        <Button className="mt-8 mx-8" onClick={handleGetStart}>
+        <VLMSettings
+          ref={vlmSettingsRef}
+          onSubmitAvailabilityChange={setCanStart}
+        />
+        <Button className="mt-8 mx-8" onClick={handleGetStart} disabled={!canStart}>
           Get Start
         </Button>
       </DialogContent>

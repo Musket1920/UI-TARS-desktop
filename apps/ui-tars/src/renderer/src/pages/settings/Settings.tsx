@@ -3,20 +3,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 // /apps/ui-tars/src/renderer/src/pages/settings/index.tsx
-import { RefreshCcw, Trash } from 'lucide-react';
-import { useRef, useEffect, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Info,
+  Loader2,
+  RefreshCcw,
+  Trash,
+} from 'lucide-react';
+import { useRef, useEffect, useMemo, useState } from 'react';
 import * as z from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { api } from '@renderer/api';
-import { SearchEngineForSettings, VLMProviderV2 } from '@main/store/types';
+import {
+  SearchEngineForSettings,
+  VLMConnectionMode,
+  VLMProviderV2,
+} from '@main/store/types';
 import { useSetting } from '@renderer/hooks/useSetting';
 import { Button } from '@renderer/components/ui/button';
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -33,6 +45,19 @@ import { ScrollArea } from '@renderer/components/ui/scroll-area';
 import { Input } from '@renderer/components/ui/input';
 import { DragArea } from '@renderer/components/Common/drag';
 import { BROWSER_OPERATOR } from '@renderer/const';
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '@renderer/components/ui/alert';
+import {
+  areLocalConnectionSnapshotsEqual,
+  getLocalConnectionFeedback,
+  isValidHttpUrl,
+  LOCALHOST_BASE_URL_HINT,
+  LocalConnectionTestState,
+  normalizeLocalConnectionSnapshot,
+} from '@renderer/components/Settings/localhost';
 
 import { PresetImport } from './PresetImport';
 import { Tabs, TabsList, TabsTrigger } from '@renderer/components/ui/tabs';
@@ -43,21 +68,62 @@ import bingIcon from '@resources/icons/bing-color.svg?url';
 import baiduIcon from '@resources/icons/baidu-color.svg?url';
 import { REPO_OWNER, REPO_NAME } from '@main/shared/constants';
 
-// 定义表单验证 schema
 const formSchema = z.object({
   language: z.enum(['en', 'zh']),
+  vlmConnectionMode: z.nativeEnum(VLMConnectionMode),
   vlmProvider: z.nativeEnum(VLMProviderV2, {
     message: 'Please select a VLM Provider to enhance resolution',
   }),
-  vlmBaseUrl: z.string().url(),
-  vlmApiKey: z.string().min(1),
-  vlmModelName: z.string().min(1),
+  vlmBaseUrl: z.string().trim().min(1, 'Enter the VLM base URL.'),
+  vlmApiKey: z.string(),
+  vlmModelName: z.string().trim().min(1, 'Enter the VLM model name.'),
   maxLoopCount: z.number().min(25).max(200),
   loopIntervalInMs: z.number().min(0).max(3000),
   searchEngineForBrowser: z.nativeEnum(SearchEngineForSettings),
   reportStorageBaseUrl: z.string().optional(),
   utioBaseUrl: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.vlmBaseUrl.trim().length > 0 && !isValidHttpUrl(data.vlmBaseUrl)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Enter a full http(s) URL, for example ${LOCALHOST_BASE_URL_HINT}.`,
+      path: ['vlmBaseUrl'],
+    });
+  }
+
+  if (
+    data.vlmConnectionMode === VLMConnectionMode.Managed &&
+    data.vlmApiKey.trim().length === 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Enter the VLM API key.',
+      path: ['vlmApiKey'],
+    });
+  }
 });
+
+type SettingsFormValues = z.infer<typeof formSchema>;
+
+const buildFormValuesFromSettings = (
+  settings: ReturnType<typeof useSetting>['settings'],
+): SettingsFormValues => {
+  return {
+    language: settings.language ?? 'en',
+    vlmConnectionMode:
+      settings.vlmConnectionMode ?? VLMConnectionMode.Managed,
+    vlmProvider: settings.vlmProvider as SettingsFormValues['vlmProvider'],
+    vlmBaseUrl: settings.vlmBaseUrl ?? '',
+    vlmApiKey: settings.vlmApiKey ?? '',
+    vlmModelName: settings.vlmModelName ?? '',
+    maxLoopCount: settings.maxLoopCount ?? 100,
+    loopIntervalInMs: settings.loopIntervalInMs ?? 1000,
+    searchEngineForBrowser:
+      settings.searchEngineForBrowser ?? SearchEngineForSettings.GOOGLE,
+    reportStorageBaseUrl: settings.reportStorageBaseUrl ?? '',
+    utioBaseUrl: settings.utioBaseUrl ?? '',
+  };
+};
 
 const SECTIONS = {
   vlm: 'VLM Settings',
@@ -71,6 +137,12 @@ export default function Settings() {
     useSetting();
   const [isPresetModalOpen, setPresetModalOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('vlm');
+  const [localConnectionTest, setLocalConnectionTest] =
+    useState<LocalConnectionTestState>({
+      status: 'idle',
+      snapshot: null,
+      result: null,
+    });
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [updateLoading, setUpdateLoading] = useState(false);
@@ -84,7 +156,6 @@ export default function Settings() {
     setUpdateLoading(true);
     try {
       const detail = await api.checkForUpdatesDetail();
-      console.log('detail', detail);
 
       if (detail.updateInfo) {
         setUpdateDetail({
@@ -113,39 +184,45 @@ export default function Settings() {
     settings?.presetSource?.type === 'remote' &&
     settings.presetSource.autoUpdate;
 
-  console.log('initialValues', settings);
+  const hasLoadedSettings = Object.keys(settings).length > 0;
+  const settingsFormValues = useMemo(() => {
+    return buildFormValuesFromSettings({
+      language: settings.language,
+      vlmConnectionMode: settings.vlmConnectionMode,
+      vlmProvider: settings.vlmProvider,
+      vlmBaseUrl: settings.vlmBaseUrl,
+      vlmApiKey: settings.vlmApiKey,
+      vlmModelName: settings.vlmModelName,
+      maxLoopCount: settings.maxLoopCount,
+      loopIntervalInMs: settings.loopIntervalInMs,
+      searchEngineForBrowser: settings.searchEngineForBrowser,
+      reportStorageBaseUrl: settings.reportStorageBaseUrl,
+      utioBaseUrl: settings.utioBaseUrl,
+    });
+  }, [
+    settings.language,
+    settings.vlmConnectionMode,
+    settings.vlmProvider,
+    settings.vlmBaseUrl,
+    settings.vlmApiKey,
+    settings.vlmModelName,
+    settings.maxLoopCount,
+    settings.loopIntervalInMs,
+    settings.searchEngineForBrowser,
+    settings.reportStorageBaseUrl,
+    settings.utioBaseUrl,
+  ]);
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<SettingsFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      language: 'en',
-      vlmBaseUrl: '',
-      vlmApiKey: '',
-      vlmModelName: '',
-      maxLoopCount: 100,
-      loopIntervalInMs: 1000,
-      reportStorageBaseUrl: '',
-      searchEngineForBrowser: SearchEngineForSettings.GOOGLE,
-      utioBaseUrl: '',
-      ...settings,
-    },
+    defaultValues: settingsFormValues,
   });
+
   useEffect(() => {
-    if (Object.keys(settings)) {
-      form.reset({
-        language: settings.language,
-        vlmProvider: settings.vlmProvider,
-        vlmBaseUrl: settings.vlmBaseUrl,
-        vlmApiKey: settings.vlmApiKey,
-        vlmModelName: settings.vlmModelName,
-        maxLoopCount: settings.maxLoopCount,
-        loopIntervalInMs: settings.loopIntervalInMs,
-        searchEngineForBrowser: settings.searchEngineForBrowser,
-        reportStorageBaseUrl: settings.reportStorageBaseUrl,
-        utioBaseUrl: settings.utioBaseUrl,
-      });
+    if (hasLoadedSettings) {
+      form.reset(settingsFormValues);
     }
-  }, [settings, form]);
+  }, [form, hasLoadedSettings, settingsFormValues]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -170,13 +247,177 @@ export default function Settings() {
     sectionRefs.current[section]?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    console.log('onSubmit', values);
+  const [vlmConnectionMode, vlmProvider, vlmBaseUrl, vlmApiKey, vlmModelName] = form.watch([
+    'vlmConnectionMode',
+    'vlmProvider',
+    'vlmBaseUrl',
+    'vlmApiKey',
+    'vlmModelName',
+  ]);
 
-    updateSetting(values);
-    // toast.success('Settings saved successfully');
-    // await api.closeSettingsWindow();
-    await api.showMainWindow();
+  const currentLocalConnectionSnapshot = useMemo(() => {
+    return normalizeLocalConnectionSnapshot({
+      vlmConnectionMode,
+      vlmBaseUrl,
+      vlmApiKey,
+      vlmModelName,
+    });
+  }, [vlmApiKey, vlmBaseUrl, vlmConnectionMode, vlmModelName]);
+
+  const isLocalhostMode =
+    vlmConnectionMode === VLMConnectionMode.LocalhostOpenAICompatible;
+  const isCurrentLocalConnectionTest = areLocalConnectionSnapshotsEqual(
+    localConnectionTest.snapshot,
+    currentLocalConnectionSnapshot,
+  );
+  const hasCurrentSuccessfulLocalConnectionTest =
+    isCurrentLocalConnectionTest && Boolean(localConnectionTest.result?.ok);
+  const isLocalConnectionFeedbackStale =
+    localConnectionTest.snapshot !== null && !isCurrentLocalConnectionTest;
+  const canSaveLocalhostMode =
+    hasCurrentSuccessfulLocalConnectionTest &&
+    localConnectionTest.status !== 'testing' &&
+    Boolean(vlmProvider);
+  const saveDisabled =
+    form.formState.isSubmitting ||
+    (isLocalhostMode && !canSaveLocalhostMode) ||
+    localConnectionTest.status === 'testing';
+
+  useEffect(() => {
+    if (!isLocalhostMode) {
+      form.clearErrors(['vlmBaseUrl', 'vlmModelName']);
+      return;
+    }
+
+    if (!isLocalConnectionFeedbackStale) {
+      return;
+    }
+
+    form.clearErrors(['vlmBaseUrl', 'vlmModelName']);
+  }, [form, isLocalConnectionFeedbackStale, isLocalhostMode]);
+
+  const handleTestConnection = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isRemoteAutoUpdatedPreset || !isLocalhostMode) {
+      return;
+    }
+
+    form.clearErrors(['vlmBaseUrl', 'vlmModelName']);
+
+    const snapshot = normalizeLocalConnectionSnapshot(form.getValues());
+    let hasValidationError = false;
+
+    if (snapshot.baseUrl.length === 0) {
+      form.setError('vlmBaseUrl', {
+        type: 'manual',
+        message: 'Enter the localhost base URL.',
+      });
+      hasValidationError = true;
+    } else if (!isValidHttpUrl(snapshot.baseUrl)) {
+      form.setError('vlmBaseUrl', {
+        type: 'manual',
+        message: `Enter a full http(s) URL, for example ${LOCALHOST_BASE_URL_HINT}.`,
+      });
+      hasValidationError = true;
+    }
+
+    if (snapshot.modelName.length === 0) {
+      form.setError('vlmModelName', {
+        type: 'manual',
+        message: 'Enter the localhost model name.',
+      });
+      hasValidationError = true;
+    }
+
+    if (hasValidationError) {
+      setLocalConnectionTest({
+        status: 'idle',
+        snapshot: null,
+        result: null,
+      });
+      return;
+    }
+
+    setLocalConnectionTest({
+      status: 'testing',
+      snapshot,
+      result: null,
+    });
+
+    try {
+      const result = await api.testLocalVLMConnection(snapshot);
+
+      if (result.errorCode === 'INVALID_URL') {
+        form.setError('vlmBaseUrl', {
+          type: 'manual',
+          message: `Enter a full http(s) URL, for example ${LOCALHOST_BASE_URL_HINT}.`,
+        });
+      }
+
+      if (result.errorCode === 'UNREACHABLE') {
+        form.setError('vlmBaseUrl', {
+          type: 'manual',
+          message:
+            'Cannot reach this localhost endpoint. Verify the server is running and the URL is correct.',
+        });
+      }
+
+      if (result.errorCode === 'MODEL_NOT_FOUND') {
+        form.setError('vlmModelName', {
+          type: 'manual',
+          message:
+            'This model was not found on the local server. Check the exact model name.',
+        });
+      }
+
+      setLocalConnectionTest({
+        status: 'completed',
+        snapshot,
+        result,
+      });
+    } catch (error) {
+      setLocalConnectionTest({
+        status: 'completed',
+        snapshot,
+        result: {
+          ok: false,
+          modelAvailable: false,
+          useResponsesApi: false,
+          errorCode: 'UNKNOWN',
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown error occurred',
+        },
+      });
+    }
+  };
+
+  const onSubmit = async (values: SettingsFormValues) => {
+    if (isLocalhostMode && !canSaveLocalhostMode) {
+      toast.error('Test the localhost connection before saving.');
+      return;
+    }
+
+    try {
+      await updateSetting({
+        ...settings,
+        ...values,
+        vlmBaseUrl: values.vlmBaseUrl.trim(),
+        vlmApiKey: values.vlmApiKey.trim(),
+        vlmModelName: values.vlmModelName.trim(),
+        useResponsesApi:
+          isLocalhostMode && localConnectionTest.result
+            ? localConnectionTest.result.useResponsesApi
+            : settings.useResponsesApi,
+      });
+      await api.showMainWindow();
+    } catch (error) {
+      toast.error('Failed to save settings', {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
   };
 
   const onCancel = async () => {
@@ -304,6 +545,44 @@ export default function Settings() {
                     );
                   }}
                 />
+                <FormField
+                  control={form.control}
+                  name="vlmConnectionMode"
+                  render={({ field }) => {
+                    return (
+                      <FormItem>
+                        <FormLabel>Connection Mode</FormLabel>
+                        <Select
+                          disabled={isRemoteAutoUpdatedPreset}
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <SelectTrigger data-testid="connection-mode">
+                            <SelectValue placeholder="Select connection mode" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={VLMConnectionMode.Managed}>
+                              Managed
+                            </SelectItem>
+                            <SelectItem
+                              value={
+                                VLMConnectionMode.LocalhostOpenAICompatible
+                              }
+                            >
+                              Localhost (OpenAI-compatible)
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          {isRemoteAutoUpdatedPreset
+                            ? 'Localhost mode is unavailable while an auto-updated preset is active. Reset to Manual in Remote Preset Management first.'
+                            : 'Choose how UI-TARS connects to your VLM. Provider selection stays separate from localhost transport settings.'}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
+                />
                 {/* VLM Provider */}
                 <FormField
                   control={form.control}
@@ -343,10 +622,20 @@ export default function Settings() {
                       <FormControl>
                         <Input
                           disabled={isRemoteAutoUpdatedPreset}
-                          placeholder="Enter VLM Base URL"
+                          data-testid="vlm-base-url"
+                          placeholder={
+                            isLocalhostMode
+                              ? LOCALHOST_BASE_URL_HINT
+                              : 'Enter VLM Base URL'
+                          }
                           {...field}
                         />
                       </FormControl>
+                      <FormDescription>
+                        {isLocalhostMode
+                          ? 'Enter the full localhost endpoint, including protocol and path.'
+                          : 'Managed connections require the full provider base URL.'}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -361,10 +650,21 @@ export default function Settings() {
                       <FormControl>
                         <Input
                           disabled={isRemoteAutoUpdatedPreset}
-                          placeholder="Enter VLM API_Key"
+                          data-testid="vlm-api-key"
+                          placeholder={
+                            isLocalhostMode
+                              ? 'Optional for localhost servers that do not require auth'
+                              : 'Enter VLM API key'
+                          }
                           {...field}
                         />
                       </FormControl>
+                      <FormDescription>
+                        {isLocalhostMode
+                          ? 'Leave blank if your localhost server does not require an API key.'
+                          : 'Managed mode requires a valid API key.'}
+                      </FormDescription>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -378,13 +678,127 @@ export default function Settings() {
                       <FormControl>
                         <Input
                           disabled={isRemoteAutoUpdatedPreset}
-                          placeholder="Enter VLM Model Name"
+                          data-testid="vlm-model-name"
+                          placeholder={
+                            isLocalhostMode
+                              ? 'Enter the exact localhost model name'
+                              : 'Enter VLM Model Name'
+                          }
                           {...field}
                         />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
+                {isLocalhostMode && (
+                  <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm font-medium">
+                        Localhost connection test
+                      </span>
+                      <p className="text-sm text-muted-foreground">
+                        Test the current localhost settings before saving. Save
+                        stays disabled until the latest test passes for these
+                        exact values.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      data-testid="test-connection"
+                      disabled={
+                        isRemoteAutoUpdatedPreset ||
+                        localConnectionTest.status === 'testing'
+                      }
+                      onClick={handleTestConnection}
+                    >
+                      {localConnectionTest.status === 'testing' ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Testing connection...
+                        </>
+                      ) : (
+                        'Test connection'
+                      )}
+                    </Button>
+
+                    {localConnectionTest.status === 'completed' &&
+                      isCurrentLocalConnectionTest &&
+                      localConnectionTest.result && (() => {
+                        const feedback = getLocalConnectionFeedback(
+                          localConnectionTest.result,
+                        );
+
+                        return (
+                          <Alert
+                            className={
+                              feedback.tone === 'success'
+                                ? 'border-green-200 bg-green-50'
+                                : feedback.tone === 'warning'
+                                  ? 'border-amber-200 bg-amber-50'
+                                  : 'border-destructive/30 bg-destructive/5'
+                            }
+                          >
+                            {feedback.tone === 'success' ? (
+                              <CheckCircle2 className="!text-green-600" />
+                            ) : feedback.tone === 'warning' ? (
+                              <Info className="!text-amber-600" />
+                            ) : (
+                              <AlertCircle className="!text-destructive" />
+                            )}
+                            <AlertTitle
+                              className={
+                                feedback.tone === 'success'
+                                  ? 'text-green-900'
+                                  : feedback.tone === 'warning'
+                                    ? 'text-amber-900'
+                                    : 'text-destructive'
+                              }
+                            >
+                              {feedback.title}
+                            </AlertTitle>
+                            <AlertDescription
+                              className={
+                                feedback.tone === 'success'
+                                  ? 'text-green-800'
+                                  : feedback.tone === 'warning'
+                                    ? 'text-amber-800'
+                                    : undefined
+                              }
+                            >
+                              {feedback.description}
+                              {localConnectionTest.result.ok && (
+                                <p>
+                                  Detected capability:{' '}
+                                  {localConnectionTest.result.useResponsesApi
+                                    ? 'Responses API supported'
+                                    : 'Chat Completions only (Responses API unavailable)'}
+                                  .
+                                </p>
+                              )}
+                              {!localConnectionTest.result.ok &&
+                                localConnectionTest.result.errorMessage &&
+                                localConnectionTest.result.errorCode !==
+                                  'INVALID_URL' && (
+                                  <p>
+                                    Details:{' '}
+                                    {localConnectionTest.result.errorMessage}
+                                  </p>
+                                )}
+                            </AlertDescription>
+                          </Alert>
+                        );
+                      })()}
+
+                    {isLocalConnectionFeedbackStale && (
+                      <p className="text-sm text-muted-foreground">
+                        Localhost details changed. Test the connection again to
+                        re-enable Save.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               {/* Chat Settings */}
               <div
@@ -399,7 +813,6 @@ export default function Settings() {
                   control={form.control}
                   name="maxLoopCount"
                   render={({ field }) => {
-                    // console.log('field', field);
                     return (
                       <FormItem>
                         <FormLabel>Max Loop</FormLabel>
@@ -603,7 +1016,11 @@ export default function Settings() {
             <Button variant="outline" type="button" onClick={onCancel}>
               Cancel
             </Button>
-            <Button type="submit" onClick={form.handleSubmit(onSubmit)}>
+            <Button
+              type="submit"
+              disabled={saveDisabled}
+              onClick={form.handleSubmit(onSubmit)}
+            >
               Save
             </Button>
           </div>

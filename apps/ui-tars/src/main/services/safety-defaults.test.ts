@@ -14,6 +14,7 @@ import {
   EngineMode,
   LocalStore,
   Operator,
+  VLMConnectionMode,
 } from '../store/types';
 
 const {
@@ -87,9 +88,11 @@ const createDeferred = <T>() => {
 
 const createSettings = (overrides: Partial<LocalStore> = {}): LocalStore => ({
   language: 'en',
+  vlmConnectionMode: VLMConnectionMode.Managed,
   vlmBaseUrl: 'https://vlm.example.com',
   vlmApiKey: 'key',
   vlmModelName: 'model',
+  useResponsesApi: false,
   operator: Operator.LocalComputer,
   engineMode: EngineMode.UITARS,
   agentSSidecarMode: AgentSSidecarMode.Embedded,

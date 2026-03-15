@@ -11,18 +11,21 @@ import { sanitizeAgentSPayload } from '@main/services/agentS/telemetry';
 
 import {
   LocalStore,
+  PresetStore,
   SearchEngineForSettings,
+  VLMConnectionMode,
   VLMProviderV2,
   Operator,
   EngineMode,
   AgentSSidecarMode,
 } from './types';
-import { validatePreset } from './validate';
+import { validateLocalStore, validatePreset } from './validate';
 import { BrowserWindow } from 'electron';
 import { enforceAgentSSafetyPolicy } from './safetyPolicy';
 
 export const DEFAULT_SETTING: LocalStore = {
   language: 'en',
+  vlmConnectionMode: VLMConnectionMode.Managed,
   vlmProvider: (env.vlmProvider as VLMProviderV2) || '',
   vlmBaseUrl: env.vlmBaseUrl || '',
   vlmApiKey: env.vlmApiKey || '',
@@ -37,6 +40,15 @@ export const DEFAULT_SETTING: LocalStore = {
   agentSEnableLocalEnv: false,
   reportStorageBaseUrl: '',
   utioBaseUrl: '',
+};
+
+const hydratePresetAsManagedSettings = (preset: PresetStore): LocalStore => {
+  return {
+    ...DEFAULT_SETTING,
+    ...preset,
+    vlmConnectionMode: VLMConnectionMode.Managed,
+    useResponsesApi: preset.useResponsesApi ?? DEFAULT_SETTING.useResponsesApi,
+  };
 };
 
 export class SettingStore {
@@ -128,7 +140,8 @@ export class SettingStore {
   }
 
   public static setStore(state: LocalStore): void {
-    SettingStore.getInstance().set(enforceAgentSSafetyPolicy(state));
+    const safeState = validateLocalStore(enforceAgentSSafetyPolicy(state));
+    SettingStore.getInstance().set(safeState);
   }
 
   public static get<K extends keyof LocalStore>(key: K): LocalStore[K] {
@@ -144,7 +157,7 @@ export class SettingStore {
   }
 
   public static clear(): void {
-    SettingStore.getInstance().set(enforceAgentSSafetyPolicy(DEFAULT_SETTING));
+    SettingStore.setStore(DEFAULT_SETTING);
   }
 
   public static openInEditor(): void {
@@ -164,9 +177,10 @@ export class SettingStore {
       const yamlText = await response.text();
       const preset = yaml.load(yamlText);
       const validatedPreset = validatePreset(preset);
+      const managedSettings = hydratePresetAsManagedSettings(validatedPreset);
 
       SettingStore.setStore({
-        ...enforceAgentSSafetyPolicy(validatedPreset),
+        ...managedSettings,
         presetSource: {
           type: 'remote',
           url,
@@ -209,5 +223,5 @@ export class SettingStore {
 async function parsePresetYaml(yamlContent: string): Promise<LocalStore> {
   const preset = yaml.load(yamlContent);
   const validatedPreset = validatePreset(preset);
-  return enforceAgentSSafetyPolicy(validatedPreset);
+  return hydratePresetAsManagedSettings(validatedPreset);
 }

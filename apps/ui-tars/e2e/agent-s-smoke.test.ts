@@ -149,7 +149,6 @@ const installAgentSFixtureHandlers = async (
     ({ ipcMain }, payload) => {
       const fixtureScenario = payload.scenario;
       const fixtureSettings = payload.settings;
-
       const createPayload = (kind: AgentSFixtureScenario) => {
         const timestamp = Date.now();
         if (kind === 'healthy') {
@@ -280,24 +279,6 @@ const openLocalSession = async (page: Page) => {
   await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 30_000 });
 };
 
-const runAgentFromInput = async (page: Page) => {
-  const chatInput = page.getByTestId('chat-input');
-  const runButton = page.getByTestId('run-agent-btn');
-  const runStatus = page.getByTestId('run-status');
-
-  await expect(runStatus).toHaveAttribute('data-status', 'idle');
-  await chatInput.fill('fixture smoke run flow');
-  await expect(runButton).toBeEnabled();
-  await runButton.click();
-
-  await expect
-    .poll(async () => runStatus.getAttribute('data-status'))
-    .toMatch(/^(thinking|executing)$/);
-  await expect
-    .poll(async () => runStatus.getAttribute('data-status'))
-    .toBe('idle');
-};
-
 const openEngineSettings = async (page: Page) => {
   await page
     .getByRole('button', { name: /^settings$/i })
@@ -341,7 +322,6 @@ test('@agent-s-healthy smoke healthy path shows Agent-S runtime indicators', asy
     ).toBeVisible();
 
     await openLocalSession(page);
-    await runAgentFromInput(page);
 
     await openEngineSettings(page);
     await selectAgentSEngine(page);

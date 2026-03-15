@@ -64,6 +64,8 @@ jobs:
         run: pnpm --filter ui-tars-desktop run test:e2e --grep "@agent-s-healthy"
       - name: Run Agent-S fallback smoke
         run: pnpm --filter ui-tars-desktop run test:e2e --grep "@agent-s-fallback"
+      - name: Run localhost provider smoke
+        run: pnpm --filter ui-tars-desktop run test:e2e --grep "@localhost-provider"
       - name: Run baseline app launch smoke
         run: pnpm --filter ui-tars-desktop run test:e2e --grep "app can launch"
       - name: Upload e2e artifacts
