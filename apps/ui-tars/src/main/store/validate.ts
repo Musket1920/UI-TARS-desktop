@@ -185,5 +185,12 @@ export const validatePreset = (data: unknown): PresetStore => {
 };
 
 export const validateLocalStore = (data: unknown): LocalStore => {
-  return LocalStoreSchema.parse(data);
+  const result = LocalStoreSchema.safeParse(data);
+
+  if (!result.success) {
+    console.error('[validateLocalStore] schema violation:', result.error.format());
+    throw result.error;
+  }
+
+  return result.data;
 };

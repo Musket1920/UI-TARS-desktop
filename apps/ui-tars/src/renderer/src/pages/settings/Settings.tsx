@@ -398,20 +398,25 @@ export default function Settings() {
       return;
     }
 
-    await updateSetting({
-      ...settings,
-      ...values,
-      vlmBaseUrl: values.vlmBaseUrl.trim(),
-      vlmApiKey: values.vlmApiKey.trim(),
-      vlmModelName: values.vlmModelName.trim(),
-      useResponsesApi:
-        isLocalhostMode && localConnectionTest.result
-          ? localConnectionTest.result.useResponsesApi
-          : settings.useResponsesApi,
-    });
-    // toast.success('Settings saved successfully');
-    // await api.closeSettingsWindow();
-    await api.showMainWindow();
+    try {
+      await updateSetting({
+        ...settings,
+        ...values,
+        vlmBaseUrl: values.vlmBaseUrl.trim(),
+        vlmApiKey: values.vlmApiKey.trim(),
+        vlmModelName: values.vlmModelName.trim(),
+        useResponsesApi:
+          isLocalhostMode && localConnectionTest.result
+            ? localConnectionTest.result.useResponsesApi
+            : settings.useResponsesApi,
+      });
+      await api.showMainWindow();
+    } catch (error) {
+      toast.error('Failed to save settings', {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
   };
 
   const onCancel = async () => {

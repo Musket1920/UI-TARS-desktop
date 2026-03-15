@@ -323,13 +323,6 @@ const probeResponsesApiSupport = async (
   });
 
   if (response.ok) {
-    const contentType = response.headers.get('content-type') ?? '';
-
-    if (contentType.includes('text/event-stream')) {
-      await response.body?.cancel().catch(() => undefined);
-      return true;
-    }
-
     try {
       const body = (await response.json()) as {
         id?: unknown;
