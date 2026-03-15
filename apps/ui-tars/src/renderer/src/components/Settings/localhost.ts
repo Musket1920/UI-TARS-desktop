@@ -21,12 +21,14 @@ export type LocalConnectionTestResult = {
 };
 
 type LocalConnectionFormValues = {
+  vlmConnectionMode?: VLMConnectionMode;
   vlmBaseUrl: string;
   vlmApiKey: string;
   vlmModelName: string;
 };
 
 export type LocalConnectionSnapshot = {
+  connectionMode: VLMConnectionMode;
   baseUrl: string;
   apiKey: string; // secretlint-disable-line @secretlint/secretlint-rule-pattern -- settings snapshot field name only
   modelName: string;
@@ -51,6 +53,7 @@ export const normalizeLocalConnectionSnapshot = (
   values: LocalConnectionFormValues,
 ): LocalConnectionSnapshot => {
   return {
+    connectionMode: values.vlmConnectionMode ?? VLMConnectionMode.Managed,
     baseUrl: values.vlmBaseUrl.trim(),
     apiKey: values.vlmApiKey.trim(), // secretlint-disable-line @secretlint/secretlint-rule-pattern -- settings snapshot field name only
     modelName: values.vlmModelName.trim(),
@@ -66,6 +69,7 @@ export const areLocalConnectionSnapshotsEqual = (
   }
 
   return (
+    left.connectionMode === right.connectionMode &&
     left.baseUrl === right.baseUrl &&
     left.apiKey === right.apiKey && // secretlint-disable-line @secretlint/secretlint-rule-pattern -- settings snapshot field name only
     left.modelName === right.modelName

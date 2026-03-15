@@ -239,6 +239,7 @@ const LocalOperator = () => {
       const currentSetting = await window.electron.setting.getSetting();
       setLastValidatedLocalSnapshot(
         normalizeLocalConnectionSnapshot({
+          vlmConnectionMode: currentSetting.vlmConnectionMode,
           vlmBaseUrl: currentSetting.vlmBaseUrl ?? '',
           vlmApiKey: currentSetting.vlmApiKey ?? '',
           vlmModelName: currentSetting.vlmModelName ?? '',
@@ -250,6 +251,7 @@ const LocalOperator = () => {
 
     const currentSetting = await window.electron.setting.getSetting();
     const currentSnapshot = normalizeLocalConnectionSnapshot({
+      vlmConnectionMode: currentSetting.vlmConnectionMode,
       vlmBaseUrl: currentSetting.vlmBaseUrl ?? '',
       vlmApiKey: currentSetting.vlmApiKey ?? '',
       vlmModelName: currentSetting.vlmModelName ?? '',

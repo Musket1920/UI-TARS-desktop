@@ -257,11 +257,12 @@ export default function Settings() {
 
   const currentLocalConnectionSnapshot = useMemo(() => {
     return normalizeLocalConnectionSnapshot({
+      vlmConnectionMode,
       vlmBaseUrl,
       vlmApiKey,
       vlmModelName,
     });
-  }, [vlmApiKey, vlmBaseUrl, vlmModelName]);
+  }, [vlmApiKey, vlmBaseUrl, vlmConnectionMode, vlmModelName]);
 
   const isLocalhostMode =
     vlmConnectionMode === VLMConnectionMode.LocalhostOpenAICompatible;
